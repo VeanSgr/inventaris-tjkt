@@ -95,7 +95,7 @@ function App() {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: "tambah_barang", ...dataBarangBaru })
+        body: JSON.stringify({ action: "addBarang", ...dataBarangBaru })
       });
       const result = await response.json();
       alert(result.message);
@@ -180,7 +180,7 @@ function App() {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: "pinjam_barang", ...dataPayload })
+        body: JSON.stringify({ action: "pinjamAlat", ...dataPayload })
       });
       const result = await response.json();
       alert(result.message);
