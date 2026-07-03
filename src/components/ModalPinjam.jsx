@@ -2,37 +2,47 @@ import React, { useState } from 'react';
 
 function ModalPinjam({ barang, isOpen, onClose, onSubmit }) {
   const [namaPeminjam, setNamaPeminjam] = useState('');
+  const [jumlahPinjam, setJumlahPinjam] = useState(1); // Default pinjam 1 unit
   
-  // Ambil tanggal hari ini (Format: YYYY-MM-DD)
   const today = new Date();
   const tglPinjam = today.toISOString().split('T')[0]; 
 
-  // Hitung otomatis tanggal kembali (+3 hari dari hari ini)
   const autoTglKembali = new Date();
   autoTglKembali.setDate(today.getDate() + 3);
   const tglKembali = autoTglKembali.toISOString().split('T')[0];
 
   if (!isOpen) return null;
 
-const handleSubmit = (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!namaPeminjam.trim()) return alert('Nama peminjam tidak boleh kosong!');
     
+    const qty = parseInt(jumlahPinjam, 10);
+    const stokTersedia = barang.stok || barang.stok_barang || 0;
+
+    // Proteksi logika input kuantitas
+    if (isNaN(qty) || qty <= 0) return alert('Jumlah peminjam minimal 1 unit, Bro!');
+    if (qty > stokTersedia) return alert(`Stok tidak mencukupi! Batas maksimum peminjaman alat ini adalah ${stokTersedia} unit.`);
+
     onSubmit({
-      id_barang: barang.id,
+      id_barang: barang.id || barang.id_barang,
+      nama_alat: barang.nama || barang.nama_barang,
       nama_peminjam: namaPeminjam,
+      jumlah_pinjam: qty, // Kirim nilai Qty baru ke App.jsx
       tgl_pinjam: tglPinjam,
-      tgl_kembali: "-" // Dikirim kosong/strip dulu, nanti diisi pas admin klik terima kembali
+      tgl_kembali: tglKembali // Kirim batas estimasi kembali
     });
     
     setNamaPeminjam('');
+    setJumlahPinjam(1);
   };
 
-  // Fungsi utilitas biar tampilan tanggal hari ini lebih enak dibaca manusia (Contoh: 02 Juli 2026)
   const formatTanggalIndo = (dateStr) => {
     const opsi = { day: '2-digit', month: 'long', year: 'numeric' };
     return new Date(dateStr).toLocaleDateString('id-ID', opsi);
   };
+
+  const stokTersedia = barang.stok || barang.stok_barang || 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
@@ -46,10 +56,11 @@ const handleSubmit = (e) => {
 
         {/* Info Barang */}
         <div className="my-4 flex items-center gap-3 rounded-xl bg-slate-950 p-3 border border-slate-800/50">
-          <img src={barang.gambar} alt={barang.nama} className="h-12 w-12 rounded-lg object-cover" />
+          <img src={barang.gambar || barang.foto_barang} alt={barang.nama || barang.nama_barang} className="h-12 w-12 rounded-lg object-cover" />
           <div>
-            <h4 className="text-sm font-semibold text-slate-200 line-clamp-1">{barang.nama}</h4>
-            <p className="text-xs text-emerald-400">Tersedia: {barang.stok} unit</p>
+            <h4 className="text-sm font-semibold text-slate-200 line-clamp-1">{barang.nama || barang.nama_barang}</h4>
+            <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-amber-400 font-medium mr-2">{barang.kategori || 'Umum'}</span>
+            <p className="text-xs text-emerald-400 inline-block">Tersedia: {stokTersedia} unit</p>
           </div>
         </div>
 
@@ -64,7 +75,23 @@ const handleSubmit = (e) => {
               placeholder="Masukkan nama lengkap siswa..."
               value={namaPeminjam}
               onChange={(e) => setNamaPeminjam(e.target.value)}
-              className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:border-emerald-500 focus:outline-none"
+              required
+            />
+          </div>
+
+          {/* REVISI: Input Quantity Unit Alat */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              Jumlah Alat Yang Dipinjam (Quantity)
+            </label>
+            <input 
+              type="number"
+              min="1"
+              max={stokTersedia}
+              value={jumlahPinjam}
+              onChange={(e) => setJumlahPinjam(e.target.value)}
+              className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-200 focus:border-emerald-500 focus:outline-none font-bold"
               required
             />
           </div>

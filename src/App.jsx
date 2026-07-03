@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import CardBarang from './components/CardBarang';
 import ModalPinjam from './components/ModalPinjam';
 import FormAdmin from './components/FormAdmin';
+// Mengimpor pustaka XLSX untuk fitur cetak laporan pesanan Pak Angga
+import * as XLSX from 'xlsx';
 
 // ========================================================
 // 🛠️ CONFIG & KREDENSIAL UTAMA
@@ -16,6 +18,8 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBarang, setSelectedBarang] = useState(null);
   
+  // State manajemen kategori filter di halaman user
+  const [selectedKategori, setSelectedKategori] = useState('Semua');
   const [currentPage, setCurrentPage] = useState('user');
   
   const [inputPin, setInputPin] = useState('');
@@ -53,6 +57,38 @@ function App() {
     }
   };
 
+  // --- FITUR REVISI: EXPORT LOG PEMINJAMAN KE EXCEL (.XLSX) ---
+  const handleExportExcel = () => {
+    if (logPeminjaman.length === 0) {
+      alert("Belum ada data log sirkulasi bulan ini untuk di-export, Bro!");
+      return;
+    }
+
+    // Format struktur data agar rapi saat dibuka di Microsoft Excel
+    const dataRapi = logPeminjaman.map((log, index) => ({
+      "No": index + 1,
+      "ID Peminjaman": log.id_pinjam,
+      "Nama Siswa / Peminjam": log.nama_peminjam,
+      "ID Alat": log.id_barang,
+      "Nama Perangkat Lab": log.nama_alat,
+      "Jumlah (Qty)": log.jumlah_pinjam || 1, // Menampilkan Qty baru
+      "Tanggal Pinjam": formatTgl(log.tgl_pinjam),
+      "Tanggal Pengembalian": formatTgl(log.tgl_kembali),
+      "Status Sirkulasi": log.status
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataRapi);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Sirkulasi");
+
+    // Atur nama file sesuai bulan berjalan secara otomatis
+    const bulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const tglNow = new Date();
+    const namaFile = `Laporan_Inventaris_TJKT_${bulanIndo[tglNow.getMonth()]}_${tglNow.getFullYear()}.xlsx`;
+
+    XLSX.writeFile(workbook, namaFile);
+  };
+
   const handleTambahBarangKeSheets = async (dataBarangBaru) => {
     setIsLoading(true);
     try {
@@ -71,9 +107,8 @@ function App() {
     }
   };
 
-  // --- LOGIKA UTAMA: HAPUS ALAT LAB DARI RAK ---
   const handleHapusBarang = async (idBarang, namaBarang) => {
-    if (!window.confirm(`Apa kamu yakin mau menghapus alat "${namaBarang}" dari sistem? Tindakan ini bersifat permanen.`)) return;
+    if (!window.confirm(`Apakah lu yakin mau menghapus alat "${namaBarang}" dari sistem, Bro? Tindakan ini bersifat permanen.`)) return;
     setIsLoading(true);
 
     try {
@@ -96,7 +131,7 @@ function App() {
   };
 
   const handleKembalikanBarang = async (idPinjam, idBarang) => {
-    if (!window.confirm("Pastikan fisik alat sudah dicek dengan aman")) return;
+    if (!window.confirm("Pastikan fisik alat sudah dicek dengan aman ya, Bro?")) return;
     setIsLoading(true);
 
     const hariIni = new Date().toISOString().split('T')[0];
@@ -122,7 +157,7 @@ function App() {
         alert(result.message);
       } catch (e) {
         console.error("Respon bukan JSON valid:", textData);
-        alert("Gagal memproses pengembalian. Cek konsol browser atau log di Apps Script!");
+        alert("Gagal memproses pengembalian.");
       }
       
       fetchAllData(); 
@@ -174,13 +209,20 @@ function App() {
     return new Date(dateStr).toLocaleDateString('id-ID', opsi);
   };
 
+  // Mengumpulkan seluruh daftar kategori unik yang terdaftar di database rak alat
+  const listKategoriUnik = ['Semua', ...new Set(daftarBarang.map(b => b.kategori || 'Umum'))];
+
+  // Memfilter barang berdasarkan tab kategori aktif pilihan siswa
+  const barangTerfilter = selectedKategori === 'Semua' 
+    ? daftarBarang 
+    : daftarBarang.filter(b => (b.kategori || 'Umum') === selectedKategori);
+
   // ========================================================
   // RENDER: DASHBOARD INTERNAL ADMIN (PREMIUM DESIGN)
   // ========================================================
   if (currentPage === 'admin') {
     return (
       <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative overflow-x-hidden">
-        {/* Latar Belakang Bloom Effect */}
         <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[120px] pointer-events-none"></div>
         <div className="absolute bottom-[20%] right-[-10%] w-[400px] h-[400px] bg-orange-600/5 rounded-full blur-[100px] pointer-events-none"></div>
 
@@ -196,7 +238,7 @@ function App() {
               <h1 className="text-2xl md:text-3xl font-black tracking-tight bg-gradient-to-r from-white via-slate-200 to-amber-300 bg-clip-text text-transparent">
                 Dashboard Admin TJKT
               </h1>
-              <p className="text-xs text-slate-400 mt-0.5">Pantau rotasi peminjaman dan konfigurasi database internal laboratorium.</p>
+              <p className="text-xs text-slate-400 mt-0.5">Pantau sirkulasi, manajemen klasifikasi rak, dan export laporan database.</p>
             </div>
             <button 
               onClick={() => {
@@ -212,16 +254,12 @@ function App() {
           {!isAdminLoggedIn ? (
             /* Card Login Admin */
             <div className="max-w-md mx-auto mt-20 p-8 bg-slate-900/40 border border-slate-800/80 rounded-2xl backdrop-blur-md shadow-2xl shadow-black/50 text-center">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-xl">
-                🔒
-              </div>
+              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-xl">🔒</div>
               <h2 className="text-lg font-bold text-slate-100 tracking-tight">Otentikasi Berlapis</h2>
               <p className="text-xs text-slate-400 mt-1 mb-6">Masukkan PIN verifikasi untuk memvalidasi akses administrasi.</p>
               <form onSubmit={handleLoginAdmin} className="space-y-4">
                 <input 
-                  type="password" 
-                  placeholder="••••••"
-                  value={inputPin}
+                  type="password" placeholder="••••••" value={inputPin}
                   onChange={(e) => setInputPin(e.target.value)}
                   className="w-full text-center tracking-[0.4em] rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-3.5 text-3xl font-extrabold text-amber-400 focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30 focus:outline-none transition-all duration-300"
                   required
@@ -240,15 +278,13 @@ function App() {
                 <FormAdmin onTambahBarang={handleTambahBarangKeSheets} isLoading={isLoading} />
               </div>
 
-              {/* MODUL BARU: MANAJEMEN & HAPUS RAK ALAT */}
+              {/* RAK MANAGEMENT UTAMA */}
               <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 backdrop-blur-md p-6 shadow-2xl shadow-black/20">
                 <div className="flex items-center gap-3 mb-5">
-                  <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-sm">
-                    📦
-                  </div>
+                  <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-sm">📦</div>
                   <div>
                     <h2 className="text-lg font-bold text-slate-100 tracking-tight">Manajemen & Hapus Rak Alat</h2>
-                    <p className="text-xs text-slate-400">Hapus alat lab secara permanen jika mengalami kerusakan total.</p>
+                    <p className="text-xs text-slate-400">Arsip seluruh perangkat lab dan pengaturan klasifikasi penempatan.</p>
                   </div>
                 </div>
 
@@ -259,13 +295,16 @@ function App() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {daftarBarang.map((barang) => (
-                      <div key={barang.id} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex justify-between items-center group hover:border-slate-700/80 transition-all duration-200">
+                      <div key={barang.id || barang.id_barang} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex justify-between items-center group hover:border-slate-700/80 transition-all duration-200">
                         <div className="overflow-hidden pr-2">
-                          <h4 className="text-sm font-bold text-slate-200 truncate">{barang.nama}</h4>
-                          <p className="text-[11px] text-slate-400 mt-0.5">Stok: <span className="text-slate-200 font-semibold">{barang.stok} unit</span></p>
+                          <h4 className="text-sm font-bold text-slate-200 truncate">{barang.nama || barang.nama_barang}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-amber-400 font-medium">{barang.kategori || 'Umum'}</span>
+                            <p className="text-[11px] text-slate-400">Stok: <span className="text-slate-200 font-semibold">{barang.stok} u</span></p>
+                          </div>
                         </div>
                         <button
-                          onClick={() => handleHapusBarang(barang.id, barang.nama)}
+                          onClick={() => handleHapusBarang(barang.id || barang.id_barang, barang.nama || barang.nama_barang)}
                           className="px-3 py-1.5 bg-red-500/10 hover:bg-red-600 border border-red-500/20 hover:border-red-600 text-red-400 hover:text-white text-xs font-bold rounded-lg transition-all duration-150 active:scale-95 flex-shrink-0"
                         >
                           Hapus Card
@@ -280,17 +319,20 @@ function App() {
               <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 backdrop-blur-md p-6 shadow-2xl shadow-black/20">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-6">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm">
-                      📋
-                    </div>
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm">📋</div>
                     <div>
                       <h2 className="text-lg font-bold text-slate-100 tracking-tight">Log Sirkulasi Alat</h2>
                       <p className="text-xs text-slate-400">Arsip pencatatan serah terima inventaris laboratorium.</p>
                     </div>
                   </div>
-                  <div className="text-[11px] bg-slate-950 border border-slate-800/80 px-3 py-1.5 rounded-lg text-slate-400 font-semibold self-start shadow-inner">
-                    Siklus Monitor: <span className="text-amber-400">Bulan Ini</span>
-                  </div>
+                  
+                  {/* TOMBOL DOWNLOAD LAPORAN EXCEL REQUISITION PAK ANGGA */}
+                  <button
+                    onClick={handleExportExcel}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all duration-300 shadow-md shadow-emerald-900/30 active:scale-95 self-start sm:self-auto"
+                  >
+                    <span>📥</span> Export Laporan (.xlsx)
+                  </button>
                 </div>
                 
                 {isLoading ? (
@@ -300,7 +342,7 @@ function App() {
                   </div>
                 ) : logPeminjaman.length === 0 ? (
                   <div className="text-center py-14 border border-dashed border-slate-800/60 rounded-xl bg-slate-950/20">
-                    <p className="text-sm text-slate-500">Belum terdeteksi adanya riwayat peminjaman perkakas.</p>
+                    <p className="text-sm text-slate-500">Belum terdeteksi adanya riwayat sirkulasi.</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-slate-800/60 bg-slate-950/50 shadow-inner">
@@ -309,6 +351,7 @@ function App() {
                         <tr className="bg-slate-950/80 text-slate-400 font-bold text-[11px] uppercase tracking-wider border-b border-slate-800/80">
                           <th className="p-4">Nama Peminjam</th>
                           <th className="p-4">Alat Lab</th>
+                          <th className="p-4 text-center">Qty</th>
                           <th className="p-4">Tgl Pinjam</th>
                           <th className="p-4">Tgl Kembali</th>
                           <th className="p-4 text-center">Status</th>
@@ -320,13 +363,12 @@ function App() {
                           <tr key={log.id_pinjam} className="hover:bg-slate-900/30 transition-all duration-200 group">
                             <td className="p-4 font-semibold text-slate-200 group-hover:text-white">{log.nama_peminjam}</td>
                             <td className="p-4 text-slate-300 font-medium">{log.nama_alat}</td>
+                            <td className="p-4 text-center text-slate-200 font-bold">{log.jumlah_pinjam || 1}</td>
                             <td className="p-4 text-slate-400 text-xs">{formatTgl(log.tgl_pinjam)}</td>
                             <td className="p-4 text-slate-400 text-xs">{formatTgl(log.tgl_kembali)}</td>
                             <td className="p-4 text-center">
                               <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide border ${
-                                log.status === "Dipinjam" 
-                                  ? "bg-amber-500/5 text-amber-400 border-amber-500/20" 
-                                  : "bg-emerald-500/5 text-emerald-400 border-emerald-500/20"
+                                log.status === "Dipinjam" ? "bg-amber-500/5 text-amber-400 border-amber-500/20" : "bg-emerald-500/5 text-emerald-400 border-emerald-500/20"
                               }`}>
                                 <span className={`w-1 h-1 rounded-full mr-1.5 ${log.status === 'Dipinjam' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}></span>
                                 {log.status}
@@ -367,7 +409,7 @@ function App() {
       <div className="absolute top-0 right-[-10%] w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none"></div>
 
       <div className="mx-auto max-w-6xl relative z-10">
-        <header className="mb-10 text-center sm:text-left border-b border-slate-900 pb-6">
+        <header className="mb-6 text-center sm:text-left border-b border-slate-900 pb-6">
           <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-semibold text-emerald-400 mb-3">
             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span> Terminal Praktikan
           </div>
@@ -377,15 +419,36 @@ function App() {
           <p className="mt-2 text-xs md:text-sm text-slate-400 max-w-xl leading-relaxed">Silakan pinjam perangkat lab yang tersedia sesuai modul praktikum ngetek atau konfigurasi jaringan hari ini.</p>
         </header>
 
+        {/* REVISI UI/UX: TAB FILTER KATEGORI/RAK AGAR TIDAK SCROLL TERLALU DALAM */}
+        <div className="flex flex-wrap items-center gap-2 mb-8 bg-slate-950/40 p-2 border border-slate-900 rounded-xl backdrop-blur-sm max-w-fit">
+          {listKategoriUnik.map((kat) => (
+            <button
+              key={kat}
+              onClick={() => setSelectedKategori(kat)}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 uppercase tracking-wider ${
+                selectedKategori === kat
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+              }`}
+            >
+              {kat}
+            </button>
+          ))}
+        </div>
+
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-28 gap-3">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-800 border-t-emerald-400"></div>
             <p className="text-xs text-slate-400 font-bold tracking-widest uppercase">Sinkronisasi Database...</p>
           </div>
+        ) : barangTerfilter.length === 0 ? (
+          <div className="text-center py-20 border border-dashed border-slate-800 rounded-xl bg-slate-900/10">
+            <p className="text-sm text-slate-500">Tidak ada perangkat lab di kategori rak ini, Bro.</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {daftarBarang.map((barang) => (
-              <CardBarang key={barang.id} barang={barang} onPinjam={handlePinjamKlik} />
+            {barangTerfilter.map((barang) => (
+              <CardBarang key={barang.id || barang.id_barang} barang={barang} onPinjam={handlePinjamKlik} />
             ))}
           </div>
         )}
