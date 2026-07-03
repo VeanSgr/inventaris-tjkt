@@ -114,9 +114,20 @@ function App() {
     }
   };
 
-  // --- BUGFIX 2: Action disesuaikan ke "hapusBarang" sesuai standarisasi camelCase GAS ---
-  const handleHapusBarang = async (idBarang, namaBarang) => {
-    if (!window.confirm(`Apakah lu yakin mau menghapus alat "${namaBarang}" dari sistem, Bro? Tindakan ini bersifat permanen.`)) return;
+// --- BUGFIX: Validasi ID sebelum dikirim ke Google Sheets ---
+  const handleHapusBarang = async (barang) => {
+    // Mengambil ID yang tersedia dari objek barang
+    const idTarget = barang.id || barang.id_barang || barang.id_alat;
+    const namaTarget = barang.nama || barang.nama_barang || barang.nama_alat;
+
+    // Keamanan tingkat pertama: Cegah kirim jika ID tidak terbaca di frontend
+    if (!idTarget) {
+      alert(`Gagal menghapus! ID untuk alat "${namaTarget}" tidak terbaca di React (undefined). Cek header kolom di Google Sheets.`);
+      console.error("Data barang yang error:", barang);
+      return;
+    }
+
+    if (!window.confirm(`Apakah lu yakin mau menghapus alat "${namaTarget}" dengan ID: ${idTarget} dari sistem, Bro?`)) return;
     setIsLoading(true);
 
     try {
@@ -124,8 +135,8 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
-          action: "hapusBarang", // Disamakan dengan fungsi camelCase di backend script
-          id_barang: idBarang 
+          action: "hapusBarang", 
+          id_barang: idTarget // Mengirim ID yang sudah tervalidasi
         })
       });
       
@@ -134,12 +145,12 @@ function App() {
         const result = JSON.parse(textData);
         alert(result.message || "Alat berhasil dihapus!");
       } catch (e) {
-        alert("Alat berhasil dihapus dari sistem!");
+        alert("Respons dari server diterima!");
       }
       fetchAllData(); 
     } catch (error) {
       console.error(error);
-      alert("Gagal menghapus barang.");
+      alert("Gagal koneksi ke server untuk menghapus barang.");
       setIsLoading(false);
     }
   };
@@ -321,7 +332,7 @@ function App() {
                           </div>
                         </div>
                         <button
-                          onClick={() => handleHapusBarang(barang.id || barang.id_barang, barang.nama || barang.nama_barang)}
+                          onClick={() => handleHapusBarang(barang)}
                           className="px-3 py-1.5 bg-red-500/10 hover:bg-red-600 border border-red-500/20 hover:border-red-600 text-red-400 hover:text-white text-xs font-bold rounded-lg transition-all duration-150 active:scale-95 flex-shrink-0"
                         >
                           Hapus Card
