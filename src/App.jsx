@@ -1,70 +1,198 @@
 import React, { useState, useEffect } from 'react';
-import CardBarang from './components/CardBarang';
-import ModalPinjam from './components/ModalPinjam';
-import FormAdmin from './components/FormAdmin';
-// Mengimpor pustaka XLSX untuk fitur cetak laporan pesanan Pak Angga
 import * as XLSX from 'xlsx';
 
-// ========================================================
-// 🛠️ CONFIG & KREDENSIAL UTAMA
-// ========================================================
-const API_URL = 'https://script.google.com/macros/s/AKfycbxHF_B01Bh_u9fojJH-xI96MFzQT4bnsyp26fZAd0U0r4EGjGC8qMlP5iZ57tjo9QPPfw/exec';
-const PIN_ADMIN = 'sXyKl$Pewk?'; 
+// GANTI DENGAN URL WEB APP DEPLOYMENT GAS YANG BARU LU DEPLOY YA, BRO!
+const API_URL = "https://script.google.com/macros/s/AKfycbxHF_B01Bh_u9fojJH-xI96MFzQT4bnsyp26fZAd0U0r4EGjGC8qMlP5iZ57tjo9QPPfw/exec";
+
+// --- KONFIGURASI PIN ADMIN ---
+const MASTER_PIN_ADMIN = "sXyKl$Pewk?"; // <--- Ganti "1234" pake PIN rahasia lu sendiri, Bro!
 
 function App() {
+  // --- STATE UTAMA ---
   const [daftarBarang, setDaftarBarang] = useState([]);
-  const [logPeminjaman, setLogPeminjaman] = useState([]); 
+  const [logPeminjaman, setLogPeminjaman] = useState([]);
+  const [isAdminMode, setIsAdminMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedBarang, setSelectedBarang] = useState(null);
-  
-  // State manajemen kategori filter di halaman user
-  const [selectedKategori, setSelectedKategori] = useState('Semua');
-  const [currentPage, setCurrentPage] = useState('user');
-  
-  const [inputPin, setInputPin] = useState('');
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
-    return localStorage.getItem('isAdminLoggedIn') === 'true';
-  });
 
-  useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.search);
-    const page = queryParams.get('page');
-    if (page === 'admin') {
-      setCurrentPage('admin');
-    } else {
-      setCurrentPage('user');
+  // --- STATE USER / SISWA INTERFACE ---
+  const [searchQuery, setSearchQuery] = useState(""); 
+  const [kategoriTerpilih, setKategoriTerpilih] = useState("SEMUA");
+  const [modalPinjam, setModalPinjam] = useState(null);
+  const [namaSiswa, setNamaSiswa] = useState("");
+
+  // --- STATE MANAGEMENT BARANG (ADMIN) ---
+  const [inputNamaAlat, setInputNamaAlat] = useState("");
+  const [inputStokAlat, setInputStokAlat] = useState("");
+  const [inputKategoriAlat, setInputKategoriAlat] = useState("");
+
+  // --- LOGIKA FILTER TAB 3 BULAN BERGULIR OTOMATIS ---
+  const generateTigaBulanTerakhir = () => {
+    const bulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const hasil = [];
+    const tgl = new Date();
+    
+    for (let i = 2; i >= 0; i--) {
+      const d = new Date(tgl.getFullYear(), tgl.getMonth() - i, 1);
+      const namaBulan = bulanIndo[d.getMonth()];
+      const tahun = d.getFullYear();
+      hasil.push({
+        label: namaBulan,
+        value: `${namaBulan}_${tahun}`
+      });
     }
-    fetchAllData();
-  }, []);
+    return hasil;
+  };
 
-  const fetchAllData = async () => {
+  const listTabBulan = generateTigaBulanTerakhir();
+  const [bulanFilterAktif, setBulanFilterAktif] = useState(listTabBulan[2].value);
+
+  // --- GET DATA DARI DATABASE GOOGLE SHEETS ---
+  const fetchAllData = async (targetBulan = bulanFilterAktif) => {
     setIsLoading(true);
     try {
-      const response = await fetch(API_URL);
+      const response = await fetch(`${API_URL}?bulan=${targetBulan}`);
       const data = await response.json();
       
       if (data.barang) {
         setDaftarBarang(data.barang);
         setLogPeminjaman(data.log_peminjaman || []);
       } else {
-        setDaftarBarang(data);
+        setDaftarBarang(data || []);
       }
     } catch (error) {
-      console.error("Gagal sinkronisasi Sheets:", error);
+      console.error("Gagal Sinkronisasi Database Sheets:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- FITUR REVISI: EXPORT LOG PEMINJAMAN KE EXCEL (.XLSX) ---
+  useEffect(() => {
+    fetchAllData(bulanFilterAktif);
+  }, [bulanFilterAktif]);
+
+  const formatTgl = (tglObj) => {
+    if (!tglObj || tglObj === "-") return "-";
+    return tglObj.toString();
+  };
+
+  // --- FITUR FIX: HANDLER TOGGLE MODE ADMIN DENGAN PROTEKSI PIN ---
+  const handleToggleAdminMode = () => {
+    if (isAdminMode) {
+      // Kalau mau keluar dari mode admin langsung keluar aja tanpa PIN
+      setIsAdminMode(false);
+    } else {
+      // Pas mau masuk Dashboard Admin, minta verifikasi PIN dulu, Bro!
+      const inputPin = window.prompt("Masukkan PIN Keamanan Admin Lab TJKT:");
+      
+      if (inputPin === null) return; // Siswa klik cancel / batal
+
+      if (inputPin === MASTER_PIN_ADMIN) {
+        setIsAdminMode(true);
+      } else {
+        alert("❌ PIN Salah! Akses ditolak. Lu bukan admin lab ya, Bro? 🤔");
+      }
+    }
+  };
+
+  // ====================================================================
+  // OPERASI API (SISWA & ADMIN)
+  // ====================================================================
+
+  const handlePinjamAlat = async (e) => {
+    e.preventDefault();
+    if (!namaSiswa.trim()) return alert("Nama kamu jangan kosong, Bro!");
+
+    setIsLoading(true);
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "pinjamAlat",
+          id_barang: modalPinjam.id,
+          nama_peminjam: namaSiswa
+        })
+      });
+      const data = await res.json();
+      alert(data.message);
+      setModalPinjam(null);
+      setNamaSiswa("");
+      fetchAllData(bulanFilterAktif);
+    } catch (error) {
+      alert("Gagal memproses transaksi peminjaman.");
+      setIsLoading(false);
+    }
+  };
+
+  const handleKembalikanAlat = async (idPinjam) => {
+    if (!window.confirm("Apakah alat ini benar sudah dikembalikan dan dicek fisiknya, Bro?")) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "kembalikanAlat",
+          id_pinjam: idPinjam
+        })
+      });
+      const data = await res.json();
+      alert(data.message);
+      fetchAllData(bulanFilterAktif);
+    } catch (error) {
+      alert("Gagal memproses pengembalian alat.");
+      setIsLoading(false);
+    }
+  };
+
+  const handleTambahAlat = async (e) => {
+    e.preventDefault();
+    if (!inputNamaAlat || !inputStokAlat) return alert("Form nama dan stok wajib diisi ya!");
+
+    setIsLoading(true);
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "tambahAlat",
+          nama: inputNamaAlat,
+          stok: parseInt(inputStokAlat),
+          kategori: inputKategoriAlat.trim() || "Umum"
+        })
+      });
+      const data = await res.json();
+      alert(data.message);
+      setInputNamaAlat("");
+      setInputStokAlat("");
+      setInputKategoriAlat("");
+      fetchAllData(bulanFilterAktif);
+    } catch (error) {
+      alert("Gagal menyimpan perangkat baru.");
+      setIsLoading(false);
+    }
+  };
+
+  const handleHapusAlat = async (idAlat) => {
+    if (!window.confirm("Data perangkat ini bakal dihapus permanen dari sistem lab, yakin?")) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ action: "hapusAlat", id: idAlat })
+      });
+      const data = await res.json();
+      alert(data.message);
+      fetchAllData(bulanFilterAktif);
+    } catch (error) {
+      alert("Gagal menghapus perangkat.");
+      setIsLoading(false);
+    }
+  };
+
   const handleExportExcel = () => {
     if (logPeminjaman.length === 0) {
-      alert("Belum ada data log sirkulasi bulan ini untuk di-export, Bro!");
+      alert(`Belum ada rekap sirkulasi buat periode ${bulanFilterAktif.replace('_', ' ')}, Bro!`);
       return;
     }
 
-    // Format struktur data agar rapi saat dibuka di Microsoft Excel
     const dataRapi = logPeminjaman.map((log, index) => ({
       "No": index + 1,
       "ID Peminjaman": log.id_pinjam,
@@ -73,7 +201,7 @@ function App() {
       "Nama Perangkat Lab": log.nama_alat,
       "Jumlah (Qty)": log.jumlah_pinjam || 1,
       "Tanggal Pinjam": formatTgl(log.tgl_pinjam),
-      "Tanggal Pengembalian": formatTgl(log.tgl_kembali),
+      "Tanggal Kembali": formatTgl(log.tgl_kembali),
       "Status Sirkulasi": log.status
     }));
 
@@ -81,412 +209,328 @@ function App() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Sirkulasi");
 
-    // Atur nama file sesuai bulan berjalan secara otomatis
-    const bulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-    const tglNow = new Date();
-    const namaFile = `Laporan_Inventaris_TJKT_${bulanIndo[tglNow.getMonth()]}_${tglNow.getFullYear()}.xlsx`;
-
+    const namaFile = `Laporan_Inventaris_TJKT_${bulanFilterAktif}.xlsx`;
     XLSX.writeFile(workbook, namaFile);
   };
 
-  // --- BUGFIX 1: Action disamakan jadi "addBarang" ---
-  const handleTambahBarangKeSheets = async (dataBarangBaru) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: "addBarang", ...dataBarangBaru })
-      });
-      
-      const textData = await response.text();
-      try {
-        const result = JSON.parse(textData);
-        alert(result.message || "Barang berhasil ditambahkan!");
-      } catch (e) {
-        alert("Barang berhasil ditambahkan ke Sheets!");
-      }
-      fetchAllData();
-    } catch (error) {
-      console.error(error);
-      alert("Gagal menambahkan barang.");
-      setIsLoading(false);
-    }
-  };
+  const listKategori = ["SEMUA", ...new Set(daftarBarang.map(b => b.kategori.toUpperCase()))];
 
-// --- BUGFIX: Validasi ID sebelum dikirim ke Google Sheets ---
-  const handleHapusBarang = async (barang) => {
-    // Mengambil ID yang tersedia dari objek barang
-    const idTarget = barang.id || barang.id_barang || barang.id_alat;
-    const namaTarget = barang.nama || barang.nama_barang || barang.nama_alat;
+  const barangTerfilter = daftarBarang.filter(barang => {
+    const cocokKategori = kategoriTerpilih === "SEMUA" || barang.kategori.toUpperCase() === kategoriTerpilih;
+    const cocokSearch = barang.nama.toLowerCase().includes(searchQuery.toLowerCase());
+    return cocokKategori && cocokSearch;
+  });
 
-    // Keamanan tingkat pertama: Cegah kirim jika ID tidak terbaca di frontend
-    if (!idTarget) {
-      alert(`Gagal menghapus! ID untuk alat "${namaTarget}" tidak terbaca di React (undefined). Cek header kolom di Google Sheets.`);
-      console.error("Data barang yang error:", barang);
-      return;
-    }
-
-    if (!window.confirm(`Apakah lu yakin mau menghapus alat "${namaTarget}" dengan ID: ${idTarget} dari sistem, Bro?`)) return;
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ 
-          action: "hapusBarang", 
-          id_barang: idTarget // Mengirim ID yang sudah tervalidasi
-        })
-      });
-      
-      const textData = await response.text();
-      try {
-        const result = JSON.parse(textData);
-        alert(result.message || "Alat berhasil dihapus!");
-      } catch (e) {
-        alert("Respons dari server diterima!");
-      }
-      fetchAllData(); 
-    } catch (error) {
-      console.error(error);
-      alert("Gagal koneksi ke server untuk menghapus barang.");
-      setIsLoading(false);
-    }
-  };
-
-  // --- BUGFIX 3: Action disesuaikan ke "kembalikanAlat" agar sinkron dengan backend ---
-  const handleKembalikanBarang = async (idPinjam, idBarang) => {
-    if (!window.confirm("Pastikan fisik alat sudah dicek dengan aman ya, Bro?")) return;
-    setIsLoading(true);
-
-    const hariIni = new Date().toISOString().split('T')[0];
-
-    try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({
-          action: "kembalikanAlat", // Disamakan format camelCase
-          id_pinjam: idPinjam,
-          id_barang: idBarang,
-          tgl_kembali_real: hariIni 
-        })
-      });
-      
-      const textData = await response.text();
-      try {
-        const result = JSON.parse(textData);
-        alert(result.message || "Barang berhasil dikembalikan!");
-      } catch (e) {
-        alert("Proses pengembalian barang sukses!");
-      }
-      fetchAllData(); 
-    } catch (error) {
-      console.error("Error Fetching:", error);
-      alert("Gagal memproses pengembalian.");
-      setIsLoading(false);
-    }
-  };
-
-  const handlePinjamKlik = (barang) => {
-    setSelectedBarang(barang);
-    setIsModalOpen(true);
-  };
-
-  // --- BUGFIX 4: Action dipastikan memakai "pinjamAlat" ---
-  const handleProsesPeminjaman = async (dataPayload) => {
-    setIsModalOpen(false);
-    setIsLoading(true);
-    try {
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: "pinjamAlat", ...dataPayload })
-      });
-      
-      const textData = await response.text();
-      try {
-        const result = JSON.parse(textData);
-        alert(result.message || "Permintaan izin pinjam berhasil dikirim!");
-      } catch (e) {
-        alert("Izin peminjaman alat berhasil diproses!");
-      }
-      fetchAllData();
-    } catch (error) {
-      console.error(error);
-      alert("Gagal memproses transaksi peminjaman.");
-      setIsLoading(false);
-    }
-  };
-
-  const handleLoginAdmin = (e) => {
-    e.preventDefault();
-    if (inputPin === PIN_ADMIN) {
-      setIsAdminLoggedIn(true);
-      localStorage.setItem('isAdminLoggedIn', 'true');
-    } else {
-      alert('PIN Salah, Bro! Akses Ditolak.');
-      setInputPin('');
-    }
-  };
-
-  const formatTgl = (dateStr) => {
-    if (!dateStr || dateStr === "-") return '-';
-    const opsi = { day: '2-digit', month: 'short', year: 'numeric' };
-    return new Date(dateStr).toLocaleDateString('id-ID', opsi);
-  };
-
-  // Mengumpulkan seluruh daftar kategori unik yang terdaftar di database rak alat
-  const listKategoriUnik = ['Semua', ...new Set(daftarBarang.map(b => b.kategori || 'Umum'))];
-
-  // Memfilter barang berdasarkan tab kategori aktif pilihan siswa
-  const barangTerfilter = selectedKategori === 'Semua' 
-    ? daftarBarang 
-    : daftarBarang.filter(b => (b.kategori || 'Umum') === selectedKategori);
-
-  // ========================================================
-  // RENDER: DASHBOARD INTERNAL ADMIN (PREMIUM DESIGN)
-  // ========================================================
-  if (currentPage === 'admin') {
-    return (
-      <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative overflow-x-hidden">
-        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[120px] pointer-events-none"></div>
-        <div className="absolute bottom-[20%] right-[-10%] w-[400px] h-[400px] bg-orange-600/5 rounded-full blur-[100px] pointer-events-none"></div>
-
-        <div className="mx-auto max-w-6xl relative z-10">
-          
-          {/* Header Panel */}
-          <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-900/30 border border-slate-800/80 backdrop-blur-md rounded-2xl p-6 shadow-xl shadow-black/30 gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
-                <span className="text-[10px] font-bold tracking-[0.2em] text-amber-400 uppercase">Sistem Inventaris Lab</span>
-              </div>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight bg-gradient-to-r from-white via-slate-200 to-amber-300 bg-clip-text text-transparent">
-                Dashboard Admin TJKT
-              </h1>
-              <p className="text-xs text-slate-400 mt-0.5">Pantau sirkulasi, manajemen klasifikasi rak, dan export laporan database.</p>
-            </div>
-            <button 
-              onClick={() => {
-                localStorage.removeItem('isAdminLoggedIn');
-                window.location.href = window.location.origin;
-              }}
-              className="w-full sm:w-auto px-5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-900 transition-all duration-300 shadow-md shadow-black/40 active:scale-95"
-            >
-              ← Keluar ke Mode Siswa
-            </button>
-          </header>
-
-          {!isAdminLoggedIn ? (
-            /* Card Login Admin */
-            <div className="max-w-md mx-auto mt-20 p-8 bg-slate-900/40 border border-slate-800/80 rounded-2xl backdrop-blur-md shadow-2xl shadow-black/50 text-center">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-xl">🔒</div>
-              <h2 className="text-lg font-bold text-slate-100 tracking-tight">Otentikasi Berlapis</h2>
-              <p className="text-xs text-slate-400 mt-1 mb-6">Masukkan PIN verifikasi untuk memvalidasi akses administrasi.</p>
-              <form onSubmit={handleLoginAdmin} className="space-y-4">
-                <input 
-                  type="password" placeholder="••••••" value={inputPin}
-                  onChange={(e) => setInputPin(e.target.value)}
-                  className="w-full text-center tracking-[0.4em] rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-3.5 text-3xl font-extrabold text-amber-400 focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30 focus:outline-none transition-all duration-300"
-                  required
-                />
-                <button type="submit" className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 py-3.5 text-xs font-bold uppercase tracking-wider text-white hover:brightness-110 active:scale-[0.99] transition duration-200 shadow-lg shadow-amber-600/10">
-                  Verifikasi PIN
-                </button>
-              </form>
-            </div>
-          ) : (
-            /* Dashboard Admin Utama */
-            <div className="space-y-8">
-              
-              {/* Form Input Alat Baru */}
-              <div className="bg-slate-900/10 border border-slate-800/50 backdrop-blur-md rounded-2xl p-1 shadow-lg">
-                <FormAdmin onTambahBarang={handleTambahBarangKeSheets} isLoading={isLoading} />
-              </div>
-
-              {/* RAK MANAGEMENT UTAMA */}
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 backdrop-blur-md p-6 shadow-2xl shadow-black/20">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-sm">📦</div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-100 tracking-tight">Manajemen & Hapus Rak Alat</h2>
-                    <p className="text-xs text-slate-400">Arsip seluruh perangkat lab dan pengaturan klasifikasi penempatan.</p>
-                  </div>
-                </div>
-
-                {isLoading ? (
-                  <div className="text-center py-6 text-xs text-slate-400">Memuat data rak...</div>
-                ) : daftarBarang.length === 0 ? (
-                  <p className="text-center text-sm text-slate-500 py-4">Belum ada alat di dalam rak database.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {daftarBarang.map((barang) => (
-                      <div key={barang.id || barang.id_barang} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex justify-between items-center group hover:border-slate-700/80 transition-all duration-200">
-                        <div className="overflow-hidden pr-2">
-                          <h4 className="text-sm font-bold text-slate-200 truncate">{barang.nama || barang.nama_barang}</h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-amber-400 font-medium">{barang.kategori || 'Umum'}</span>
-                            <p className="text-[11px] text-slate-400">Stok: <span className="text-slate-200 font-semibold">{barang.stok || barang.stok_barang || 0} u</span></p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => handleHapusBarang(barang)}
-                          className="px-3 py-1.5 bg-red-500/10 hover:bg-red-600 border border-red-500/20 hover:border-red-600 text-red-400 hover:text-white text-xs font-bold rounded-lg transition-all duration-150 active:scale-95 flex-shrink-0"
-                        >
-                          Hapus Card
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              {/* Tabel Log Sirkulasi */}
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 backdrop-blur-md p-6 shadow-2xl shadow-black/20">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm">📋</div>
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-100 tracking-tight">Log Sirkulasi Alat</h2>
-                      <p className="text-xs text-slate-400">Arsip pencatatan serah terima inventaris laboratorium.</p>
-                    </div>
-                  </div>
-                  
-                  {/* TOMBOL DOWNLOAD LAPORAN EXCEL REQUISITION PAK ANGGA */}
-                  <button
-                    onClick={handleExportExcel}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all duration-300 shadow-md shadow-emerald-900/30 active:scale-95 self-start sm:self-auto"
-                  >
-                    <span>📥</span> Export Laporan (.xlsx)
-                  </button>
-                </div>
-                
-                {isLoading ? (
-                  <div className="text-center py-14">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-800 border-t-amber-500 mx-auto mb-3"></div>
-                    <p className="text-xs text-slate-400 font-medium tracking-wider uppercase">Menyinkronkan Data...</p>
-                  </div>
-                ) : logPeminjaman.length === 0 ? (
-                  <div className="text-center py-14 border border-dashed border-slate-800/60 rounded-xl bg-slate-950/20">
-                    <p className="text-sm text-slate-500">Belum terdeteksi adanya riwayat sirkulasi.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-slate-800/60 bg-slate-950/50 shadow-inner">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-slate-950/80 text-slate-400 font-bold text-[11px] uppercase tracking-wider border-b border-slate-800/80">
-                          <th className="p-4">Nama Peminjam</th>
-                          <th className="p-4">Alat Lab</th>
-                          <th className="p-4 text-center">Qty</th>
-                          <th className="p-4">Tgl Pinjam</th>
-                          <th className="p-4">Tgl Kembali</th>
-                          <th className="p-4 text-center">Status</th>
-                          <th className="p-4 text-right">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/40">
-                        {logPeminjaman.map((log) => (
-                          <tr key={log.id_pinjam} className="hover:bg-slate-900/30 transition-all duration-200 group">
-                            <td className="p-4 font-semibold text-slate-200 group-hover:text-white">{log.nama_peminjam}</td>
-                            <td className="p-4 text-slate-300 font-medium">{log.nama_alat}</td>
-                            <td className="p-4 text-center text-slate-200 font-bold">{log.jumlah_pinjam || 1}</td>
-                            <td className="p-4 text-slate-400 text-xs">{formatTgl(log.tgl_pinjam)}</td>
-                            <td className="p-4 text-slate-400 text-xs">{formatTgl(log.tgl_kembali)}</td>
-                            <td className="p-4 text-center">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide border ${
-                                log.status === "Dipinjam" ? "bg-amber-500/5 text-amber-400 border-amber-500/20" : "bg-emerald-500/5 text-emerald-400 border-emerald-500/20"
-                              }`}>
-                                <span className={`w-1 h-1 rounded-full mr-1.5 ${log.status === 'Dipinjam' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`}></span>
-                                {log.status}
-                              </span>
-                            </td>
-                            <td className="p-4 text-right">
-                              {log.status === "Dipinjam" ? (
-                                <button
-                                  onClick={() => handleKembalikanBarang(log.id_pinjam, log.id_barang)}
-                                  className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-bold rounded-lg transition-all duration-200 shadow-md shadow-amber-500/10 active:scale-95"
-                                >
-                                  Terima Kembali
-                                </button>
-                              ) : (
-                                <span className="inline-block text-[10px] text-slate-500 font-bold bg-slate-900/80 border border-slate-800/80 px-2.5 py-1 rounded-md">Selesai</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ========================================================
-  // RENDER: VIEW DISPLAY UTAMA KATALOG (MODE SISWA)
-  // ========================================================
   return (
-    <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative overflow-x-hidden">
-      <div className="absolute top-0 right-[-10%] w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none"></div>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30">
+      
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-gradient-to-b from-indigo-600/10 via-transparent to-transparent blur-3xl pointer-events-none -z-10" />
 
-      <div className="mx-auto max-w-6xl relative z-10">
-        <header className="mb-6 text-center sm:text-left border-b border-slate-900 pb-6">
-          <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-semibold text-emerald-400 mb-3">
-            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span> Terminal Praktikan
+      {/* HEADER NAVBAR */}
+      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40 px-4 py-4 shadow-sm">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div>
+            <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest bg-indigo-500/5 border border-indigo-500/10 px-2 py-1 rounded-md">🛠️ INVENTARIS LAB TJKT</span>
+            <h1 className="text-xl font-black text-slate-100 tracking-tight mt-1">Sirkulasi Alat Lab</h1>
           </div>
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent sm:text-4xl">
-            Sirkulasi Alat Lab TJKT
-          </h1>
-          <p className="mt-2 text-xs md:text-sm text-slate-400 max-w-xl leading-relaxed">Silakan pinjam perangkat lab yang tersedia sesuai modul praktikum ngetek atau konfigurasi jaringan hari ini.</p>
-        </header>
-
-        {/* TAB FILTER KATEGORI/RAK */}
-        <div className="flex flex-wrap items-center gap-2 mb-8 bg-slate-950/40 p-2 border border-slate-900 rounded-xl backdrop-blur-sm max-w-fit">
-          {listKategoriUnik.map((kat) => (
-            <button
-              key={kat}
-              onClick={() => setSelectedKategori(kat)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 uppercase tracking-wider ${
-                selectedKategori === kat
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/10'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-              }`}
-            >
-              {kat}
-            </button>
-          ))}
+          {/* DI SINI SINKRONISASI COUPLING BARU: Fungsi diganti ke handleToggleAdminMode */}
+          <button 
+            onClick={handleToggleAdminMode}
+            className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all duration-300 ${
+              isAdminMode 
+                ? "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20" 
+                : "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700"
+            }`}
+          >
+            {isAdminMode ? "🔒 Keluar (Mode Siswa)" : "🔑 Dashboard Admin"}
+          </button>
         </div>
+      </header>
 
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-28 gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-800 border-t-emerald-400"></div>
-            <p className="text-xs text-slate-400 font-bold tracking-widest uppercase">Sinkronisasi Database...</p>
-          </div>
-        ) : barangTerfilter.length === 0 ? (
-          <div className="text-center py-20 border border-dashed border-slate-800 rounded-xl bg-slate-900/10">
-            <p className="text-sm text-slate-500">Tidak ada perangkat lab di kategori rak ini, Bro.</p>
+      {/* MAIN LAYOUT */}
+      <main className="max-w-6xl mx-auto px-4 py-8">
+        
+        {/* INTERFACE MODE USER (SISWA) */}
+        {!isAdminMode ? (
+          <div>
+            <div className="mb-8">
+              <p className="text-sm text-slate-400 max-w-xl">
+                Cari alat atau perangkat lab yang kamu butuhkan untuk kegiatan produktif hari ini. Ketik nama alat langsung pada kolom pencarian di bawah.
+              </p>
+            </div>
+
+            {/* SEARCH BAR & BADGE KATEGORI */}
+            <div className="bg-slate-900/40 border border-slate-900/80 p-4 rounded-2xl mb-8 flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
+              <div className="relative flex-1 max-w-md">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Ketik nama alat praktikum... (Contoh: LAN Tester, Tang)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-12 py-2.5 bg-slate-950/80 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/10 transition-all duration-200"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2 py-1 rounded-md transition-all"
+                  >
+                    RESET
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {listKategori.map((kat) => (
+                  <button
+                    key={kat}
+                    onClick={() => setKategoriTerpilih(kat)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold tracking-wide border transition-all duration-200 ${
+                      kategoriTerpilih === kat
+                        ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-900/30"
+                        : "bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                    }`}
+                  >
+                    {kat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* GRID DATA BARANG */}
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3">
+                <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-slate-500 uppercase tracking-widest animate-pulse">Menghubungkan ke database Rak Lab...</p>
+              </div>
+            ) : barangTerfilter.length === 0 ? (
+              <div className="text-center py-16 border border-dashed border-slate-900 rounded-2xl bg-slate-900/5">
+                <p className="text-sm text-slate-500">Nama alat atau kategori yang kamu ketik nggak ada di rak, Bro.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                {barangTerfilter.map((barang) => (
+                  <div key={barang.id} className="group relative rounded-2xl border border-slate-900/80 bg-slate-900/20 hover:border-slate-800/80 transition-all duration-300 p-5 flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start gap-2 mb-3">
+                        <span className="px-2 py-0.5 bg-slate-950 border border-slate-800/60 rounded-md text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          📁 {barang.kategori}
+                        </span>
+                        <span className={`text-[11px] font-bold ${barang.stok > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {barang.stok > 0 ? `🟢 Tersedia: ${barang.stok} unit` : "🔴 Sedang Habis"}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-200 text-base group-hover:text-indigo-400 transition-colors duration-200">{barang.nama}</h3>
+                    </div>
+                    <button
+                      disabled={barang.stok < 1}
+                      onClick={() => setModalPinjam(barang)}
+                      className="w-full mt-5 py-2.5 bg-slate-950 border border-slate-800 hover:border-indigo-600 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition-all duration-300 disabled:opacity-30 disabled:pointer-events-none"
+                    >
+                      Pinjam Alat Ini
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {barangTerfilter.map((barang) => (
-              <CardBarang key={barang.id || barang.id_barang} barang={barang} onPinjam={handlePinjamKlik} />
-            ))}
+          
+          // INTERFACE MODE DASHBOARD CONTROL (ADMIN)
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+              
+              {/* FORM REGISTER BARANG BARU */}
+              <div className="bg-slate-900/30 border border-slate-900 rounded-2xl p-6">
+                <h2 className="text-sm font-bold text-amber-400 mb-4 flex items-center gap-2">📥 Registrasi Alat Baru</h2>
+                <form onSubmit={handleTambahAlat} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Nama Barang / Perangkat</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: Cisco Router Switch 24 Port"
+                      value={inputNamaAlat}
+                      onChange={(e) => setInputNamaAlat(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Kuantitas Stok</label>
+                      <input
+                        type="number"
+                        placeholder="0"
+                        value={inputStokAlat}
+                        onChange={(e) => setInputStokAlat(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Rak / Kategori</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Rak Server, Kabel"
+                        value={inputKategoriAlat}
+                        onChange={(e) => setInputKategoriAlat(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl transition-all duration-200">
+                    Simpan ke Gudang Rak
+                  </button>
+                </form>
+              </div>
+
+              {/* KONTROL STOK FISIK & HAPUS */}
+              <div className="bg-slate-900/10 border border-slate-900 rounded-2xl p-6 lg:col-span-2">
+                <h2 className="text-sm font-bold text-slate-300 mb-4">🗃️ Kontrol Stok Fisik & Rak</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-64 overflow-y-auto pr-1">
+                  {daftarBarang.map(b => (
+                    <div key={b.id} className="p-3.5 bg-slate-950/80 border border-slate-900 rounded-xl flex justify-between items-center gap-3">
+                      <div className="truncate">
+                        <p className="text-xs font-bold text-slate-200 truncate">{b.nama}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Kategori: {b.kategori} | Sisa Stok: <span className="text-slate-300">{b.stok} unit</span></p>
+                      </div>
+                      <button 
+                        onClick={() => handleHapusAlat(b.id)}
+                        className="px-2.5 py-1 text-[10px] font-bold border border-rose-950 bg-rose-950/20 text-rose-400 rounded-lg hover:bg-rose-950/60 transition-colors shrink-0"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ARSIP LOG SIRKULASI & TAB BULANAN */}
+            <div className="bg-slate-900/30 border border-slate-900 rounded-2xl p-6 shadow-xl">
+              <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4 mb-6">
+                <div>
+                  <h2 className="text-base font-bold text-slate-100">📋 Buku Log Kendali Sirkulasi</h2>
+                  <p className="text-xs text-slate-400">Arsip riwayat peminjaman siswa di lab.</p>
+                </div>
+
+                <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 p-1 rounded-xl max-w-fit">
+                  {listTabBulan.map((bulan) => (
+                    <button
+                      key={bulan.value}
+                      onClick={() => setBulanFilterAktif(bulan.value)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${
+                        bulanFilterAktif === bulan.value
+                          ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                      }`}
+                    >
+                      {bulan.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={handleExportExcel}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all duration-200 self-start lg:self-auto"
+                >
+                  📥 Export Periode ({bulanFilterAktif.split('_')[0]})
+                </button>
+              </div>
+
+              {isLoading ? (
+                <div className="text-center py-10 text-xs text-slate-500 animate-pulse">Menghubungkan ke Sheets log periode...</div>
+              ) : logPeminjaman.length === 0 ? (
+                <div className="text-center py-12 text-xs text-slate-500">Tidak ada data transaksi peminjaman tercatat pada periode {bulanFilterAktif.replace('_', ' ')}.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[10px]">
+                        <th className="pb-3 pl-2">Nama Siswa</th>
+                        <th className="pb-3">Alat Lab</th>
+                        <th className="pb-3">Tgl Pinjam</th>
+                        <th className="pb-3">Tgl Kembali</th>
+                        <th className="pb-3">Status</th>
+                        <th className="pb-3 pr-2 text-right">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900">
+                      {logPeminjaman.map((log) => (
+                        <tr key={log.id_pinjam} className="hover:bg-slate-900/20 transition-colors">
+                          <td className="py-3.5 pl-2 font-medium text-slate-200">{log.nama_peminjam}</td>
+                          <td className="py-3.5 text-slate-300">{log.nama_alat}</td>
+                          <td className="py-3.5 text-slate-400">{formatTgl(log.tgl_pinjam)}</td>
+                          <td className="py-3.5 text-slate-400">{formatTgl(log.tgl_kembali)}</td>
+                          <td className="py-3.5">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                              log.status === "Dipinjam" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            }`}>
+                              {log.status}
+                            </span>
+                          </td>
+                          <td className="py-3.5 pr-2 text-right">
+                            {log.status === "Dipinjam" && (
+                              <button
+                                onClick={() => handleKembalikanAlat(log.id_pinjam)}
+                                className="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[10px] rounded-md transition-all shadow"
+                              >
+                                Pulangkan Alat
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
-      </div>
+      </main>
 
-      {selectedBarang && (
-        <ModalPinjam 
-          barang={selectedBarang} isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)} onSubmit={handleProsesPeminjaman}
-        />
+      {/* MODAL CONFIRMATION DI SISI USER */}
+      {modalPinjam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-sm font-bold text-slate-100">Konfirmasi Form Peminjaman</h3>
+              <button onClick={() => setModalPinjam(null)} className="text-slate-500 hover:text-slate-300 text-xs">✕</button>
+            </div>
+            <div className="p-3 bg-slate-950 rounded-xl mb-4 border border-slate-800/60">
+              <p className="text-[10px] text-slate-500 uppercase font-bold">Perangkat Pilihan:</p>
+              <p className="text-sm font-bold text-indigo-400 mt-0.5">{modalPinjam.nama}</p>
+              <p className="text-[10px] text-slate-500 mt-1">Sisa Stok Lab: {modalPinjam.stok} unit</p>
+            </div>
+            <form onSubmit={handlePinjamAlat} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">Nama Lengkap Siswa</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ketik nama lengkap kamu, Bro..."
+                  value={namaSiswa}
+                  onChange={(e) => setNamaSiswa(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10"
+                />
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setModalPinjam(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-slate-200"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow"
+                >
+                  Ajukan Sekarang
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
