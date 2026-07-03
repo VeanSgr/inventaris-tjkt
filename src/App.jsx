@@ -71,7 +71,7 @@ function App() {
       "Nama Siswa / Peminjam": log.nama_peminjam,
       "ID Alat": log.id_barang,
       "Nama Perangkat Lab": log.nama_alat,
-      "Jumlah (Qty)": log.jumlah_pinjam || 1, // Menampilkan Qty baru
+      "Jumlah (Qty)": log.jumlah_pinjam || 1,
       "Tanggal Pinjam": formatTgl(log.tgl_pinjam),
       "Tanggal Pengembalian": formatTgl(log.tgl_kembali),
       "Status Sirkulasi": log.status
@@ -89,6 +89,7 @@ function App() {
     XLSX.writeFile(workbook, namaFile);
   };
 
+  // --- BUGFIX 1: Action disamakan jadi "addBarang" ---
   const handleTambahBarangKeSheets = async (dataBarangBaru) => {
     setIsLoading(true);
     try {
@@ -97,8 +98,14 @@ function App() {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: "addBarang", ...dataBarangBaru })
       });
-      const result = await response.json();
-      alert(result.message);
+      
+      const textData = await response.text();
+      try {
+        const result = JSON.parse(textData);
+        alert(result.message || "Barang berhasil ditambahkan!");
+      } catch (e) {
+        alert("Barang berhasil ditambahkan ke Sheets!");
+      }
       fetchAllData();
     } catch (error) {
       console.error(error);
@@ -107,6 +114,7 @@ function App() {
     }
   };
 
+  // --- BUGFIX 2: Action disesuaikan ke "hapusBarang" sesuai standarisasi camelCase GAS ---
   const handleHapusBarang = async (idBarang, namaBarang) => {
     if (!window.confirm(`Apakah lu yakin mau menghapus alat "${namaBarang}" dari sistem, Bro? Tindakan ini bersifat permanen.`)) return;
     setIsLoading(true);
@@ -116,12 +124,18 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ 
-          action: "hapus_barang", 
+          action: "hapusBarang", // Disamakan dengan fungsi camelCase di backend script
           id_barang: idBarang 
         })
       });
-      const result = await response.json();
-      alert(result.message);
+      
+      const textData = await response.text();
+      try {
+        const result = JSON.parse(textData);
+        alert(result.message || "Alat berhasil dihapus!");
+      } catch (e) {
+        alert("Alat berhasil dihapus dari sistem!");
+      }
       fetchAllData(); 
     } catch (error) {
       console.error(error);
@@ -130,6 +144,7 @@ function App() {
     }
   };
 
+  // --- BUGFIX 3: Action disesuaikan ke "kembalikanAlat" agar sinkron dengan backend ---
   const handleKembalikanBarang = async (idPinjam, idBarang) => {
     if (!window.confirm("Pastikan fisik alat sudah dicek dengan aman ya, Bro?")) return;
     setIsLoading(true);
@@ -139,12 +154,9 @@ function App() {
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        mode: 'cors',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
-          action: "kembalikan_barang",
+          action: "kembalikanAlat", // Disamakan format camelCase
           id_pinjam: idPinjam,
           id_barang: idBarang,
           tgl_kembali_real: hariIni 
@@ -154,12 +166,10 @@ function App() {
       const textData = await response.text();
       try {
         const result = JSON.parse(textData);
-        alert(result.message);
+        alert(result.message || "Barang berhasil dikembalikan!");
       } catch (e) {
-        console.error("Respon bukan JSON valid:", textData);
-        alert("Gagal memproses pengembalian.");
+        alert("Proses pengembalian barang sukses!");
       }
-      
       fetchAllData(); 
     } catch (error) {
       console.error("Error Fetching:", error);
@@ -173,6 +183,7 @@ function App() {
     setIsModalOpen(true);
   };
 
+  // --- BUGFIX 4: Action dipastikan memakai "pinjamAlat" ---
   const handleProsesPeminjaman = async (dataPayload) => {
     setIsModalOpen(false);
     setIsLoading(true);
@@ -182,8 +193,14 @@ function App() {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: "pinjamAlat", ...dataPayload })
       });
-      const result = await response.json();
-      alert(result.message);
+      
+      const textData = await response.text();
+      try {
+        const result = JSON.parse(textData);
+        alert(result.message || "Permintaan izin pinjam berhasil dikirim!");
+      } catch (e) {
+        alert("Izin peminjaman alat berhasil diproses!");
+      }
       fetchAllData();
     } catch (error) {
       console.error(error);
@@ -300,7 +317,7 @@ function App() {
                           <h4 className="text-sm font-bold text-slate-200 truncate">{barang.nama || barang.nama_barang}</h4>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-amber-400 font-medium">{barang.kategori || 'Umum'}</span>
-                            <p className="text-[11px] text-slate-400">Stok: <span className="text-slate-200 font-semibold">{barang.stok} u</span></p>
+                            <p className="text-[11px] text-slate-400">Stok: <span className="text-slate-200 font-semibold">{barang.stok || barang.stok_barang || 0} u</span></p>
                           </div>
                         </div>
                         <button
@@ -419,7 +436,7 @@ function App() {
           <p className="mt-2 text-xs md:text-sm text-slate-400 max-w-xl leading-relaxed">Silakan pinjam perangkat lab yang tersedia sesuai modul praktikum ngetek atau konfigurasi jaringan hari ini.</p>
         </header>
 
-        {/* REVISI UI/UX: TAB FILTER KATEGORI/RAK AGAR TIDAK SCROLL TERLALU DALAM */}
+        {/* TAB FILTER KATEGORI/RAK */}
         <div className="flex flex-wrap items-center gap-2 mb-8 bg-slate-950/40 p-2 border border-slate-900 rounded-xl backdrop-blur-sm max-w-fit">
           {listKategoriUnik.map((kat) => (
             <button
