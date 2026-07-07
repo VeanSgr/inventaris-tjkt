@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 // 🛠️ CONFIG & KREDENSIAL
 // ========================================================
 // GANTI DENGAN URL DEPLOY GAS YANG BARU!!!
-const API_URL = 'https://script.google.com/macros/s/AKfycbx2sfMYJznjLthK3h9Bq24bBKe8cGrjErBCOYZrJBzIxMtrzhXpK_AIe7IfRI-Dzz0n3w/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxHF_B01Bh_u9fojJH-xI96MFzQT4bnsyp26fZAd0U0r4EGjGC8qMlP5iZ57tjo9QPPfw/exec';
 const PIN_ADMIN = 'sXyKl$Pewk?'; 
 
 // ========================================================
@@ -14,6 +14,15 @@ const PIN_ADMIN = 'sXyKl$Pewk?';
 const CardBarang = ({ barang, onPinjam }) => (
   <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col justify-between group hover:border-slate-700 transition-all duration-300">
     <div>
+      {barang.gambar ? (
+        <div className="w-full h-32 rounded-lg mb-4 overflow-hidden bg-slate-950 border border-slate-800">
+          <img src={barang.gambar} alt={barang.nama_alat} className="w-full h-full object-cover" />
+        </div>
+      ) : (
+        <div className="w-full h-32 rounded-lg mb-4 overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center text-4xl opacity-50">
+          📦
+        </div>
+      )}
       <div className="text-[10px] bg-slate-950 inline-block px-2 py-1 rounded text-amber-400 font-bold uppercase tracking-wider border border-slate-800 mb-3">{barang.kategori || 'Umum'}</div>
       <h3 className="text-lg font-bold text-white mb-1 group-hover:text-emerald-400 transition-colors">{barang.nama_alat}</h3>
       <p className="text-xs text-slate-400 mb-5">Stok Tersedia: <span className="text-emerald-400 font-bold text-sm ml-1">{barang.stok_tersedia}</span> <span className="text-slate-600">/ {barang.stok_total}</span></p>
@@ -36,13 +45,44 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
   const [nama, setNama] = useState('');
   const [kategori, setKategori] = useState('');
   const [stok, setStok] = useState(1);
+  const [gambar, setGambar] = useState('');
+  const [preview, setPreview] = useState('');
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Kompresi gambar pakai Canvas (Google Sheets maksimal 50.000 karakter per cell)
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300; // Perkecil resolusi agar Base64 tidak terlalu panjang
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Ubah jadi Base64 format JPEG kualitas 60%
+        const base64String = canvas.toDataURL('image/jpeg', 0.6); 
+        setGambar(base64String);
+        setPreview(base64String);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onTambahBarang({ nama_alat: nama, kategori, stok });
+    onTambahBarang({ nama_alat: nama, kategori, stok, gambar });
     setNama('');
     setKategori('');
     setStok(1);
+    setGambar('');
+    setPreview('');
   };
 
   return (
@@ -63,6 +103,13 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
         <div>
           <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Stok Awal</label>
           <input required type="number" min="1" placeholder="Qty" value={stok} onChange={e=>setStok(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all" />
+        </div>
+        <div className="md:col-span-4 mt-2">
+          <label className="block text-[10px] uppercase font-bold text-slate-500 mb-2 ml-1">Foto Alat (Upload Langsung)</label>
+          <div className="flex items-center gap-4">
+            {preview && <img src={preview} alt="Preview" className="w-14 h-14 rounded-lg object-cover border border-slate-700 shadow-md" />}
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-sm text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-amber-500/10 file:text-amber-400 hover:file:bg-amber-500/20 transition-all cursor-pointer" />
+          </div>
         </div>
       </div>
       <div className="mt-5 flex justify-end">
