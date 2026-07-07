@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 // 🛠️ CONFIG & KREDENSIAL
 // ========================================================
 // GANTI DENGAN URL DEPLOY GAS YANG BARU!!!
-const API_URL = 'https://script.google.com/macros/s/AKfycbxHF_B01Bh_u9fojJH-xI96MFzQT4bnsyp26fZAd0U0r4EGjGC8qMlP5iZ57tjo9QPPfw/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbx2sfMYJznjLthK3h9Bq24bBKe8cGrjErBCOYZrJBzIxMtrzhXpK_AIe7IfRI-Dzz0n3w/exec';
 const PIN_ADMIN = 'sXyKl$Pewk?'; 
 
 // ========================================================
