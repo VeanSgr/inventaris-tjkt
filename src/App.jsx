@@ -1,78 +1,114 @@
 import React, { useState, useEffect } from 'react';
 
 // ========================================================
-// 🛠️ CONFIG & KREDENSIAL
+// 🛠️ CONFIG & KREDENSIAL UTAMA
 // ========================================================
-// GANTI DENGAN URL DEPLOY GAS YANG BARU!!!
 const API_URL = 'https://script.google.com/macros/s/AKfycbx2sfMYJznjLthK3h9Bq24bBKe8cGrjErBCOYZrJBzIxMtrzhXpK_AIe7IfRI-Dzz0n3w/exec';
 const PIN_ADMIN = 'sXyKl$Pewk?'; 
 
 // ========================================================
-// 🧩 KOMPONEN INLINE (Digabung dalam satu file agar tidak error)
+// 🧩 KOMPONEN INLINE (Biar folder components bisa dihapus)
 // ========================================================
 
-const CardBarang = ({ barang, onPinjam }) => (
-  <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col justify-between group hover:border-slate-700 transition-all duration-300">
-    <div>
-      {barang.gambar ? (
-        <div className="w-full h-32 rounded-lg mb-4 overflow-hidden bg-slate-950 border border-slate-800">
-          <img src={barang.gambar} alt={barang.nama_alat} className="w-full h-full object-cover" />
+const CardBarang = ({ barang, onPinjam }) => {
+  const idTarget = barang.id || barang.id_barang;
+  const namaTarget = barang.nama || barang.nama_barang || barang.nama_alat;
+  const stokTersedia = barang.stok_tersedia !== undefined ? barang.stok_tersedia : (barang.stok || 0);
+  const stokTotal = barang.stok_total !== undefined ? barang.stok_total : (barang.stok || 0);
+  const gambarSrc = barang.gambar || '';
+
+  return (
+    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col justify-between group hover:border-slate-700 transition-all duration-300">
+      <div>
+        {/* Frame Gambar Alat */}
+        <div className="w-full h-44 bg-slate-950 rounded-lg overflow-hidden border border-slate-800/80 mb-4 flex items-center justify-center relative">
+          {gambarSrc ? (
+            <img 
+              src={gambarSrc} 
+              alt={namaTarget} 
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              onError={(e) => { e.target.src = ''; }} // fallback jika error
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-slate-700">
+              <span className="text-4xl mb-1">🔌</span>
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-600">No Image</span>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="w-full h-32 rounded-lg mb-4 overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center text-4xl opacity-50">
-          📦
+
+        <div className="text-[10px] bg-slate-950 inline-block px-2 py-1 rounded text-amber-400 font-bold uppercase tracking-wider border border-slate-800 mb-3">
+          {barang.kategori || 'Umum'}
         </div>
-      )}
-      <div className="text-[10px] bg-slate-950 inline-block px-2 py-1 rounded text-amber-400 font-bold uppercase tracking-wider border border-slate-800 mb-3">{barang.kategori || 'Umum'}</div>
-      <h3 className="text-lg font-bold text-white mb-1 group-hover:text-emerald-400 transition-colors">{barang.nama_alat}</h3>
-      <p className="text-xs text-slate-400 mb-5">Stok Tersedia: <span className="text-emerald-400 font-bold text-sm ml-1">{barang.stok_tersedia}</span> <span className="text-slate-600">/ {barang.stok_total}</span></p>
+        <h3 className="text-lg font-bold text-white mb-1 group-hover:text-emerald-400 transition-colors truncate">
+          {namaTarget}
+        </h3>
+        <p className="text-xs text-slate-400 mb-5">
+          Stok Tersedia: <span className="text-emerald-400 font-bold text-sm ml-1">{stokTersedia}</span> 
+          <span className="text-slate-600"> / {stokTotal}</span>
+        </p>
+      </div>
+      <button
+        onClick={() => onPinjam(barang)}
+        disabled={stokTersedia <= 0}
+        className={`w-full py-2.5 rounded-lg text-sm font-bold transition-all shadow-md active:scale-[0.98] ${
+          stokTersedia > 0 
+            ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30' 
+            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
+        }`}
+      >
+        {stokTersedia > 0 ? 'Pinjam Alat' : 'Stok Habis'}
+      </button>
     </div>
-    <button
-      onClick={() => onPinjam(barang)}
-      disabled={barang.stok_tersedia <= 0}
-      className={`w-full py-2.5 rounded-lg text-sm font-bold transition-all shadow-md active:scale-[0.98] ${
-        barang.stok_tersedia > 0 
-          ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30' 
-          : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700/50'
-      }`}
-    >
-      {barang.stok_tersedia > 0 ? 'Pinjam Alat' : 'Stok Habis'}
-    </button>
-  </div>
-);
+  );
+};
 
 const FormAdmin = ({ onTambahBarang, isLoading }) => {
   const [nama, setNama] = useState('');
   const [kategori, setKategori] = useState('');
   const [stok, setStok] = useState(1);
-  const [gambar, setGambar] = useState('');
+  const [gambar, setGambar] = useState(''); // Menyimpan data Base64 gambar
   const [preview, setPreview] = useState('');
 
-  const handleImageUpload = (e) => {
+  // Handler Konversi & Kompresi Gambar ke Base64 (Maks 250x250px agar muat di sel Sheets)
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 250;
+          const MAX_HEIGHT = 250;
+          let width = img.width;
+          let height = img.height;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        // Kompresi gambar pakai Canvas (Google Sheets maksimal 50.000 karakter per cell)
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 300; // Perkecil resolusi agar Base64 tidak terlalu panjang
-        const scaleSize = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scaleSize;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        
-        // Ubah jadi Base64 format JPEG kualitas 60%
-        const base64String = canvas.toDataURL('image/jpeg', 0.6); 
-        setGambar(base64String);
-        setPreview(base64String);
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Kompresi kualitas gambar ke JPEG 0.7
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          setGambar(dataUrl);
+          setPreview(dataUrl);
+        };
+        img.src = event.target.result;
       };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -91,27 +127,43 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
         <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-sm">➕</div>
         <h3 className="text-md font-bold text-white">Input Perangkat Baru</h3>
       </div>
+      
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="md:col-span-2">
-          <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Nama Alat</label>
-          <input required type="text" placeholder="Cth: Mikrotik RB951" value={nama} onChange={e=>setNama(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700" />
-        </div>
-        <div>
-          <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Kategori</label>
-          <input required type="text" placeholder="Cth: Router" value={kategori} onChange={e=>setKategori(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700" />
-        </div>
-        <div>
-          <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Stok Awal</label>
-          <input required type="number" min="1" placeholder="Qty" value={stok} onChange={e=>setStok(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all" />
-        </div>
-        <div className="md:col-span-4 mt-2">
-          <label className="block text-[10px] uppercase font-bold text-slate-500 mb-2 ml-1">Foto Alat (Upload Langsung)</label>
-          <div className="flex items-center gap-4">
-            {preview && <img src={preview} alt="Preview" className="w-14 h-14 rounded-lg object-cover border border-slate-700 shadow-md" />}
-            <input type="file" accept="image/*" onChange={handleImageUpload} className="w-full text-sm text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-amber-500/10 file:text-amber-400 hover:file:bg-amber-500/20 transition-all cursor-pointer" />
+        <div className="md:col-span-2 space-y-4">
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Nama Alat</label>
+            <input required type="text" placeholder="Cth: Mikrotik RB951" value={nama} onChange={e=>setNama(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700" />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Kategori</label>
+            <input required type="text" placeholder="Cth: Router" value={kategori} onChange={e=>setKategori(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700" />
           </div>
         </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Stok Awal</label>
+            <input required type="number" min="1" placeholder="Qty" value={stok} onChange={e=>setStok(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all" />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Upload Gambar Alat</label>
+            <input type="file" accept="image/*" onChange={handleFileChange} className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 file:cursor-pointer cursor-pointer focus:outline-none" />
+          </div>
+        </div>
+
+        {/* Box Preview Gambar */}
+        <div className="flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-xl p-2 bg-slate-950/40">
+          {preview ? (
+            <div className="relative w-full h-full max-h-[110px] rounded-lg overflow-hidden">
+              <img src={preview} alt="Preview" className="w-full h-full object-contain" />
+              <button type="button" onClick={() => { setGambar(''); setPreview(''); }} className="absolute top-1 right-1 bg-red-600 hover:bg-red-500 text-white rounded-full p-1 text-[8px] font-bold">✕</button>
+            </div>
+          ) : (
+            <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">Preview Gambar</span>
+          )}
+        </div>
       </div>
+
       <div className="mt-5 flex justify-end">
         <button disabled={isLoading} type="submit" className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-bold rounded-lg transition-all disabled:opacity-50 shadow-lg shadow-amber-900/20 active:scale-95">
           {isLoading ? 'Menyimpan...' : 'Simpan ke Database'}
@@ -121,47 +173,143 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
   );
 };
 
+// ========================================================
+// 🛠️ MEMBUAT MODAL PINJAM PERSIS SEPERTI GAMBAR MOCKUP
+// ========================================================
 const ModalPinjam = ({ barang, isOpen, onClose, onSubmit, isLoading }) => {
   const [nama, setNama] = useState('');
   const [qty, setQty] = useState(1);
   
-  if(!isOpen) return null;
+  if (!isOpen || !barang) return null;
   
+  const namaTarget = barang.nama || barang.nama_barang || barang.nama_alat;
+  const stokTersedia = barang.stok_terfilter !== undefined ? barang.stok_terfilter : (barang.stok_tersedia || barang.stok || 1);
+  const gambarSrc = barang.gambar || '';
+
+  // Hitung tanggal pinjam (hari ini) dan batas pengembalian (hari ini + 3 hari)
+  const hariIni = new Date();
+  const batasKembali = new Date();
+  batasKembali.setDate(hariIni.getDate() + 3);
+
+  // Format tanggal lokal Indonesia: Cth "02 Juli 2026"
+  const formatTglLokal = (dateObj) => {
+    return dateObj.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSubmit({ id_barang: barang.id_barang, nama_alat: barang.nama_alat, nama_peminjam: nama, qty });
+    onSubmit({ 
+      id_barang: barang.id || barang.id_barang, 
+      nama_alat: namaTarget, 
+      nama_peminjam: nama, 
+      qty: qty,
+      tgl_pinjam: hariIni.toISOString().split('T')[0] // Mengirim format standar YYYY-MM-DD ke server GAS
+    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-[#070a13]/80 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 w-full max-w-md shadow-2xl shadow-black">
-        <div className="mb-6">
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-3">
-            📋
+      {/* Overlay Background */}
+      <div className="absolute inset-0 bg-[#070a13]/85 backdrop-blur-md animate-fade-in" onClick={onClose}></div>
+      
+      {/* Box Modal */}
+      <div className="relative bg-[#111625] border border-slate-800/80 rounded-3xl p-6 md:p-8 w-full max-w-md shadow-2xl shadow-black/90">
+        
+        {/* Header Modal */}
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-bold text-white tracking-wide">Konfirmasi Peminjaman</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-all text-xl p-1">
+            ✕
+          </button>
+        </div>
+
+        {/* Card Ringkasan Alat */}
+        <div className="bg-[#0c0f1a] border border-slate-800/50 rounded-2xl p-4 mb-6 flex items-center gap-4">
+          <div className="w-16 h-16 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shrink-0 flex items-center justify-center">
+            {gambarSrc ? (
+              <img src={gambarSrc} alt={namaTarget} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-2xl">🔌</span>
+            )}
           </div>
-          <h3 className="text-xl font-black text-white tracking-tight">Form Peminjaman</h3>
-          <p className="text-xs text-slate-400 mt-1">Isi data identitas untuk meminjam <span className="text-emerald-400 font-bold">{barang.nama_alat}</span></p>
+          <div>
+            <h4 className="text-md font-extrabold text-white">{namaTarget}</h4>
+            <p className="text-xs text-emerald-400 font-semibold mt-1">
+              Tersedia: {stokTersedia} unit
+            </p>
+          </div>
         </div>
         
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-5 mb-8">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-2 ml-1 uppercase tracking-wide">Nama Peminjam / Kelompok</label>
-              <input required type="text" value={nama} onChange={e=>setNama(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 outline-none transition-all placeholder:text-slate-700" placeholder="Masukkan nama lengkap..." />
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Input Nama Peminjam */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">
+              Nama Lengkap Peminjam
+            </label>
+            <input 
+              required 
+              type="text" 
+              value={nama} 
+              onChange={e => setNama(e.target.value)} 
+              className="w-full bg-[#0a0d16] border border-slate-800 rounded-2xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 outline-none transition-all placeholder:text-slate-600 font-medium" 
+              placeholder="Masukkan nama lengkap siswa..." 
+            />
+          </div>
+
+          {/* Input Qty */}
+          <div>
+            <div className="flex justify-between items-end mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Jumlah Pinjam (Qty)
+              </label>
+              <span className="text-[10px] text-slate-500 font-semibold">Maksimal: {stokTersedia}</span>
             </div>
-            <div>
-              <div className="flex justify-between items-end mb-2 ml-1">
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide">Jumlah (Qty)</label>
-                <span className="text-[10px] text-slate-500 font-medium">Maksimal: {barang.stok_tersedia}</span>
+            <input 
+              required 
+              type="number" 
+              min="1" 
+              max={stokTersedia} 
+              value={qty} 
+              onChange={e => setQty(Number(e.target.value))} 
+              className="w-full bg-[#0a0d16] border border-slate-800 rounded-2xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 outline-none transition-all font-semibold" 
+            />
+          </div>
+
+          {/* Bagian Tanggal & Batas Pinjam (Sesuai Mockup) */}
+          <div className="bg-[#0c0f1a] border border-slate-850 rounded-2xl p-4 space-y-4 text-xs font-semibold">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Tanggal Pinjam (Hari Ini):</span>
+              <span className="text-slate-200">{formatTglLokal(hariIni)}</span>
+            </div>
+            <div className="border-t border-slate-800/60"></div>
+            <div className="flex justify-between items-start">
+              <span className="text-slate-400">Batas Pengembalian:</span>
+              <div className="text-right">
+                <span className="text-red-400 block">{formatTglLokal(batasKembali)}</span>
+                <span className="text-[10px] text-red-400/80 font-semibold">(Maks 3 Hari)</span>
               </div>
-              <input required type="number" min="1" max={barang.stok_tersedia} value={qty} onChange={e=>setQty(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 outline-none transition-all" />
             </div>
           </div>
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} disabled={isLoading} className="flex-1 px-4 py-3 bg-slate-950 border border-slate-800 hover:bg-slate-800 text-slate-300 text-sm font-bold rounded-xl transition-all">Batal</button>
-            <button type="submit" disabled={isLoading} className="flex-1 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-emerald-900/30 active:scale-95">
-              {isLoading ? 'Memproses...' : 'Ajukan Izin'}
+
+          {/* Tombol Aksi */}
+          <div className="flex gap-3 pt-2">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="flex-1 px-4 py-3.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-extrabold uppercase tracking-wider rounded-2xl transition-all active:scale-95"
+            >
+              Batal
+            </button>
+            <button 
+              type="submit" 
+              disabled={isLoading} 
+              className="flex-1 px-4 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider rounded-2xl transition-all disabled:opacity-50 active:scale-95 shadow-lg shadow-emerald-500/10"
+            >
+              {isLoading ? 'Memproses...' : 'Minta Izin Pinjam'}
             </button>
           </div>
         </form>
@@ -170,7 +318,6 @@ const ModalPinjam = ({ barang, isOpen, onClose, onSubmit, isLoading }) => {
   );
 };
 
-
 // ========================================================
 // 🚀 APLIKASI UTAMA
 // ========================================================
@@ -178,135 +325,184 @@ const ModalPinjam = ({ barang, isOpen, onClose, onSubmit, isLoading }) => {
 function App() {
   const [daftarBarang, setDaftarBarang] = useState([]);
   const [logPeminjaman, setLogPeminjaman] = useState([]); 
-  const [isLoading, setIsLoading] = useState(false); // Diubah defaultnya agar tidak nyangkut saat init
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBarang, setSelectedBarang] = useState(null);
   
-  // State untuk Fitur Filter & Search
   const [selectedKategori, setSelectedKategori] = useState('Semua');
-  const [searchQuery, setSearchQuery] = useState(''); 
-  
   const [currentPage, setCurrentPage] = useState('user');
-  const [inputPin, setInputPin] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // State Search Bar
   
+  const [inputPin, setInputPin] = useState('');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
     return localStorage.getItem('isAdminLoggedIn') === 'true';
   });
 
   useEffect(() => {
     const queryParams = new URLSearchParams(window.location.search);
-    if (queryParams.get('page') === 'admin') setCurrentPage('admin');
+    const page = queryParams.get('page');
+    if (page === 'admin') {
+      setCurrentPage('admin');
+    } else {
+      setCurrentPage('user');
+    }
     fetchAllData();
   }, []);
 
-  // --- CORE FETCH API ---
   const fetchAllData = async () => {
     setIsLoading(true);
     try {
       const response = await fetch(API_URL);
       const data = await response.json();
       
-      if (data.status === 'success') {
-        setDaftarBarang(data.barang || []);
+      if (data.barang) {
+        setDaftarBarang(data.barang);
         setLogPeminjaman(data.log_peminjaman || []);
       } else {
-        console.error("Backend Error:", data.message);
-        alert("Gagal load data: " + data.message);
+        setDaftarBarang(data);
       }
     } catch (error) {
       console.error("Gagal sinkronisasi Sheets:", error);
-      alert("Koneksi ke server Google Sheets terputus.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- REUSABLE POST FUNCTION ---
-  const postData = async (payload, successMsg) => {
+  const handleExportExcel = () => {
+    if (logPeminjaman.length === 0) {
+      alert("Belum ada data log sirkulasi bulan ini untuk di-export, Bro!");
+      return;
+    }
+
+    const headers = ["No", "ID Peminjaman", "Nama Siswa / Peminjam", "ID Alat", "Nama Perangkat Lab", "Jumlah (Qty)", "Tanggal Pinjam", "Tanggal Pengembalian", "Status Sirkulasi"];
+    
+    const rows = logPeminjaman.map((log, index) => {
+      const cleanNamaPeminjam = (log.nama_peminjam || "").replace(/"/g, '""');
+      const cleanNamaAlat = (log.nama_alat || "").replace(/"/g, '""');
+      const qty = log.jumlah_pinjam || log.qty || 1;
+      const tglPinjam = formatTgl(log.tgl_pinjam);
+      const tglKembali = formatTgl(log.tgl_kembali);
+      const status = log.status || "-";
+
+      return [
+        index + 1,
+        `"${log.id_pinjam || ""}"`,
+        `"${cleanNamaPeminjam}"`,
+        `"${log.id_barang || ""}"`,
+        `"${cleanNamaAlat}"`,
+        qty,
+        `"${tglPinjam}"`,
+        `"${tglKembali}"`,
+        `"${status}"`
+      ].join(",");
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    
+    const bulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const tglNow = new Date();
+    const namaFile = `Laporan_Inventaris_TJKT_${bulanIndo[tglNow.getMonth()]}_${tglNow.getFullYear()}.csv`;
+
+    link.setAttribute("href", url);
+    link.setAttribute("download", namaFile);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleTambahBarangKeSheets = async (dataBarangBaru) => {
     setIsLoading(true);
     try {
-      const response = await fetch(API_URL, {
+      await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ action: "addBarang", ...dataBarangBaru })
       });
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        alert(result.message || successMsg);
-        await fetchAllData(); 
-        return true;
-      } else {
-        alert("Error: " + result.message);
-        return false;
-      }
+      alert("Barang berhasil ditambahkan ke database!");
+      fetchAllData();
     } catch (error) {
       console.error(error);
-      alert("Gagal koneksi ke server saat memproses data.");
-      return false;
-    } finally {
+      alert("Gagal menambahkan barang.");
       setIsLoading(false);
     }
   };
 
-  // --- HANDLERS ---
-  const handleTambahBarang = (dataBarangBaru) => {
-    postData({ action: "addBarang", ...dataBarangBaru }, "Barang sukses ditambahkan!");
+  const handleHapusBarang = async (barang) => {
+    const idTarget = barang.id || barang.id_barang;
+    const namaTarget = barang.nama || barang.nama_barang || barang.nama_alat;
+
+    if (!idTarget) {
+      alert(`Gagal menghapus! ID untuk alat "${namaTarget}" tidak terbaca.`);
+      return;
+    }
+
+    if (!window.confirm(`Apakah lu yakin mau menghapus alat "${namaTarget}" dari sistem, Bro?`)) return;
+    setIsLoading(true);
+
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "hapusBarang", id_barang: idTarget })
+      });
+      alert("Alat sukses dihapus!");
+      fetchAllData(); 
+    } catch (error) {
+      console.error(error);
+      alert("Gagal koneksi ke server untuk menghapus barang.");
+      setIsLoading(false);
+    }
   };
 
-  const handleHapusBarang = (barang) => {
-    const targetId = barang.id_barang || barang.id;
-    if (!targetId) return alert("ID barang nggak valid!");
-    
-    if (window.confirm(`Yakin mau hapus ${barang.nama_alat} dari database?`)) {
-      postData({ action: "hapusBarang", id_barang: targetId }, "Barang berhasil dihapus!");
+  const handleKembalikanBarang = async (idPinjam, idBarang) => {
+    if (!window.confirm("Pastikan fisik alat sudah dicek dengan aman ya, Bro?")) return;
+    setIsLoading(true);
+    const hariIni = new Date().toISOString().split('T')[0];
+
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: "kembalikanAlat",
+          id_pinjam: idPinjam,
+          id_barang: idBarang,
+          tgl_kembali_real: hariIni 
+        })
+      });
+      alert("Proses pengembalian barang sukses!");
+      fetchAllData(); 
+    } catch (error) {
+      console.error(error);
+      alert("Gagal memproses pengembalian.");
+      setIsLoading(false);
     }
+  };
+
+  const handlePinjamKlik = (barang) => {
+    setSelectedBarang(barang);
+    setIsModalOpen(true);
   };
 
   const handleProsesPeminjaman = async (dataPayload) => {
     setIsModalOpen(false);
-    const sukses = await postData({ action: "pinjamAlat", ...dataPayload }, "Mantap, izin pinjam sukses dicatat!");
-    if(!sukses) setIsModalOpen(true); 
-  };
-
-  const handleKembalikanBarang = (idPinjam, idBarang) => {
-    if (window.confirm("Pastikan fisik alat udah dicek dan kondisinya baik. Yakin mau konfirmasi pengembalian?")) {
-      postData({ action: "kembalikanAlat", id_pinjam: idPinjam, id_barang: idBarang }, "Alat berhasil dikembalikan ke rak!");
+    setIsLoading(true);
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "pinjamAlat", ...dataPayload })
+      });
+      alert("Izin peminjaman alat berhasil diproses!");
+      fetchAllData();
+    } catch (error) {
+      console.error(error);
+      alert("Gagal memproses transaksi peminjaman.");
+      setIsLoading(false);
     }
-  };
-
-  // --- EXPORT CSV (Pengganti library XLSX agar bisa jalan tanpa install package eksternal) ---
-  const handleExportLaporan = () => {
-    if (logPeminjaman.length === 0) return alert("Belum ada data sirkulasi bulan ini!");
-
-    const headers = ["No", "ID Transaksi", "Nama Peminjam", "Perangkat Lab", "Jumlah", "Tgl Pinjam", "Tgl Pengembalian", "Status"];
-    
-    const csvRows = logPeminjaman.map((log, index) => {
-      return [
-        index + 1,
-        log.id_pinjam,
-        `"${log.nama_peminjam}"`, 
-        `"${log.nama_alat}"`,
-        log.qty,
-        `"${formatTgl(log.tgl_pinjam)}"`,
-        `"${formatTgl(log.tgl_kembali)}"`,
-        `"${log.status}"`
-      ].join(",");
-    });
-
-    const csvString = [headers.join(","), ...csvRows].join("\n");
-    
-    // Create download link
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const tglNow = new Date();
-    
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Laporan_TJKT_${tglNow.getMonth()+1}_${tglNow.getFullYear()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   const handleLoginAdmin = (e) => {
@@ -315,150 +511,185 @@ function App() {
       setIsAdminLoggedIn(true);
       localStorage.setItem('isAdminLoggedIn', 'true');
     } else {
-      alert('PIN Salah, Akses Ditolak!');
+      alert('PIN Salah, Bro! Akses Ditolak.');
       setInputPin('');
     }
   };
 
   const formatTgl = (dateStr) => {
     if (!dateStr || dateStr === "-") return '-';
-    return new Date(dateStr).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' });
+    const opsi = { day: '2-digit', month: 'short', year: 'numeric' };
+    return new Date(dateStr).toLocaleDateString('id-ID', opsi);
   };
 
-  // --- FILTER LOGIC (SEARCH + KATEGORI) ---
   const listKategoriUnik = ['Semua', ...new Set(daftarBarang.map(b => b.kategori || 'Umum'))];
-  
+
+  // Logic filter gabungan Kategori & Search Bar
   const barangTerfilter = daftarBarang.filter(b => {
     const matchKategori = selectedKategori === 'Semua' || (b.kategori || 'Umum') === selectedKategori;
-    const matchSearch = (b.nama_alat || b.nama_barang || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const namaAlat = b.nama || b.nama_barang || b.nama_alat || '';
+    const matchSearch = namaAlat.toLowerCase().includes(searchQuery.toLowerCase());
     return matchKategori && matchSearch;
   });
 
-
   // ========================================================
-  // RENDER: ADMIN DASHBOARD
+  // RENDER: DASHBOARD INTERNAL ADMIN
   // ========================================================
   if (currentPage === 'admin') {
     return (
-      <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative">
-        {/* Background glow effects */}
+      <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative overflow-x-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[120px] pointer-events-none"></div>
 
         <div className="mx-auto max-w-6xl relative z-10">
-          <header className="mb-8 flex flex-col sm:flex-row justify-between sm:items-center bg-slate-900/30 border border-slate-800/80 backdrop-blur-md rounded-2xl p-6 shadow-xl gap-4">
+          <header className="mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-900/30 border border-slate-800/80 backdrop-blur-md rounded-2xl p-6 shadow-xl gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="flex h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
                 <span className="text-[10px] font-bold tracking-[0.2em] text-amber-400 uppercase">Sistem Inventaris Lab</span>
               </div>
-              <h1 className="text-2xl md:text-3xl font-black text-white">Dashboard <span className="text-amber-500">Admin</span></h1>
-              <p className="text-xs text-slate-400 mt-1">Area khusus admin untuk manajemen dan rekap sirkulasi.</p>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight bg-gradient-to-r from-white to-amber-300 bg-clip-text text-transparent">
+                Dashboard Admin TJKT
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">Pantau sirkulasi, manajemen klasifikasi rak, and export laporan database.</p>
             </div>
             <button 
-              onClick={() => { localStorage.removeItem('isAdminLoggedIn'); window.location.href = window.location.pathname; }}
-              className="px-5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold hover:bg-slate-900 transition-all shadow-md shadow-black/40 active:scale-95"
+              onClick={() => {
+                localStorage.removeItem('isAdminLoggedIn');
+                window.location.origin ? window.location.href = window.location.origin : window.location.reload();
+              }}
+              className="w-full sm:w-auto px-5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-900 transition-all active:scale-95"
             >
               ← Keluar ke Mode Siswa
             </button>
           </header>
 
           {!isAdminLoggedIn ? (
-            <div className="max-w-md mx-auto mt-20 p-8 bg-slate-900/40 border border-slate-800/80 rounded-2xl shadow-2xl backdrop-blur-sm text-center">
-              <div className="w-14 h-14 mx-auto bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center text-2xl mb-4">🔒</div>
-              <h2 className="text-lg font-bold text-slate-100">Otentikasi Keamanan</h2>
-              <p className="text-xs text-slate-400 mt-1">Masukkan PIN verifikasi untuk mengakses panel.</p>
-              <form onSubmit={handleLoginAdmin} className="space-y-4 mt-6">
+            <div className="max-w-md mx-auto mt-20 p-8 bg-slate-900/40 border border-slate-800/80 rounded-2xl text-center">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4 text-xl">🔒</div>
+              <h2 className="text-lg font-bold text-slate-100 tracking-tight">Otentikasi Berlapis</h2>
+              <p className="text-xs text-slate-400 mt-1 mb-6">Masukkan PIN verifikasi untuk memvalidasi akses administrasi.</p>
+              <form onSubmit={handleLoginAdmin} className="space-y-4">
                 <input 
-                  type="password" placeholder="••••••" value={inputPin} onChange={(e) => setInputPin(e.target.value)}
-                  className="w-full text-center tracking-[0.5em] rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-4 text-2xl font-bold text-amber-400 outline-none focus:border-amber-500/50 transition-all" required
+                  type="password" placeholder="••••••" value={inputPin}
+                  onChange={(e) => setInputPin(e.target.value)}
+                  className="w-full text-center tracking-[0.4em] rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-3.5 text-3xl font-extrabold text-amber-400 focus:border-amber-500/50 focus:outline-none transition-all"
+                  required
                 />
-                <button type="submit" className="w-full rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 py-3.5 text-sm font-bold text-white hover:brightness-110 transition-all shadow-lg shadow-amber-900/20 active:scale-95">Verifikasi PIN</button>
+                <button type="submit" className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 py-3.5 text-xs font-bold uppercase tracking-wider text-white hover:brightness-110 shadow-lg active:scale-95">
+                  Verifikasi PIN
+                </button>
               </form>
             </div>
           ) : (
             <div className="space-y-8">
-              <div className="relative">
-                <FormAdmin onTambahBarang={handleTambahBarang} isLoading={isLoading} />
-              </div>
+              <FormAdmin onTambahBarang={handleTambahBarangKeSheets} isLoading={isLoading} />
 
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/30 p-6 shadow-xl backdrop-blur-sm">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-sm">📦</div>
-                  <h2 className="text-lg font-bold text-slate-100">Manajemen Rak Alat</h2>
+              {/* MANAJEMEN RAK */}
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 p-6 shadow-2xl">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-sm">📦</div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-100 tracking-tight">Manajemen Rak Alat</h2>
+                  </div>
                 </div>
-                
-                {isLoading && daftarBarang.length === 0 ? <p className="text-slate-400 text-sm animate-pulse">Menyinkronkan dari Sheets...</p> : (
+
+                {isLoading ? (
+                  <div className="text-center py-6 text-xs text-slate-400">Memuat data rak...</div>
+                ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {daftarBarang.map((barang) => (
-                      <div key={barang.id_barang} className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 flex justify-between items-center group hover:border-slate-700 transition-all">
-                        <div className="pr-4 overflow-hidden">
-                          <h4 className="text-sm font-bold text-slate-200 truncate">{barang.nama_alat}</h4>
-                          <div className="text-[11px] mt-1.5 flex items-center gap-2">
-                            <span className="bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-amber-400 font-medium">{barang.kategori}</span>
-                            <span className="text-slate-400">Tersedia: <span className="text-emerald-400 font-bold">{barang.stok_tersedia}/{barang.stok_total}</span></span>
+                    {daftarBarang.map((barang) => {
+                      const idItem = barang.id || barang.id_barang;
+                      const namaItem = barang.nama || barang.nama_barang || barang.nama_alat;
+                      
+                      const stokTersedia = barang.stok_tersedia !== undefined ? barang.stok_tersedia : (barang.stok || 0);
+                      const stokTotal = barang.stok_total !== undefined ? barang.stok_total : (barang.stok || 0);
+
+                      return (
+                        <div key={idItem} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 flex justify-between items-center group hover:border-slate-700/80 transition-all">
+                          <div className="overflow-hidden pr-2 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center">
+                              {barang.gambar ? (
+                                <img src={barang.gambar} alt="" className="w-full h-full object-cover" />
+                              ) : <span className="text-xs">🔌</span>}
+                            </div>
+                            <div className="truncate">
+                              <h4 className="text-sm font-bold text-slate-200 truncate">{namaItem}</h4>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[9px] bg-slate-900 border border-slate-800 px-1.5 py-0.2 rounded text-amber-400">{barang.kategori || 'Umum'}</span>
+                                <p className="text-[10px] text-slate-400">
+                                  Tersedia: <span className="text-emerald-400 font-semibold">{stokTersedia}</span> / <span className="text-slate-300 font-semibold">{stokTotal}</span>
+                                </p>
+                              </div>
+                            </div>
                           </div>
+                          <button onClick={() => handleHapusBarang(barang)} className="px-3 py-1.5 bg-red-500/10 hover:bg-red-600 border border-red-500/20 text-red-400 hover:text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex-shrink-0">
+                            Hapus
+                          </button>
                         </div>
-                        <button onClick={() => handleHapusBarang(barang)} className="shrink-0 px-3 py-2 bg-red-900/20 text-red-400 border border-red-900/30 text-xs font-bold rounded-lg hover:bg-red-600 hover:text-white transition-all">
-                          Hapus
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
               
-              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/30 p-6 shadow-xl backdrop-blur-sm">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
+              {/* TABEL LOG SIRKULASI */}
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 p-6 shadow-2xl">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-6">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sm">📋</div>
-                    <h2 className="text-lg font-bold text-slate-100">Log Sirkulasi Bulan Ini</h2>
+                    <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm">📋</div>
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-100 tracking-tight">Log Sirkulasi Alat</h2>
+                    </div>
                   </div>
-                  <button onClick={handleExportLaporan} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-emerald-900/30 active:scale-95 flex items-center justify-center gap-2">
-                    📥 Unduh Laporan (CSV)
+                  
+                  {/* EXPORT LAPORAN */}
+                  <button onClick={handleExportExcel} className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-md active:scale-95">
+                    <span>📊</span> Export Laporan (.csv)
                   </button>
                 </div>
                 
-                {isLoading && logPeminjaman.length === 0 ? <p className="text-slate-400 text-sm animate-pulse">Menyinkronkan dari Sheets...</p> : (
-                  <div className="overflow-x-auto rounded-xl border border-slate-800/60 shadow-inner">
-                    <table className="w-full text-left text-sm whitespace-nowrap">
-                      <thead className="bg-slate-950/80 text-slate-400 text-[11px] font-bold uppercase tracking-wider border-b border-slate-800/80">
-                        <tr>
+                {isLoading ? (
+                  <p className="text-center py-6 text-xs text-slate-400">Menyinkronkan data...</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-slate-800/60 bg-slate-950/50">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-slate-950/80 text-slate-400 font-bold text-[11px] uppercase tracking-wider border-b border-slate-800/80">
                           <th className="p-4">Nama Peminjam</th>
                           <th className="p-4">Alat Lab</th>
                           <th className="p-4 text-center">Qty</th>
-                          <th className="p-4">Waktu Pinjam</th>
+                          <th className="p-4">Tgl Pinjam</th>
+                          <th className="p-4">Tgl Kembali</th>
                           <th className="p-4 text-center">Status</th>
-                          <th className="p-4 text-right">Tindakan</th>
+                          <th className="p-4 text-right">Aksi</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800/40 bg-slate-900/20">
+                      <tbody className="divide-y divide-slate-800/40">
                         {logPeminjaman.map((log) => (
-                          <tr key={log.id_pinjam} className="hover:bg-slate-800/50 transition-colors text-slate-300">
-                            <td className="p-4 font-bold text-white">{log.nama_peminjam}</td>
+                          <tr key={log.id_pinjam} className="hover:bg-slate-900/30 text-slate-300">
+                            <td className="p-4 font-semibold text-slate-200">{log.nama_peminjam}</td>
                             <td className="p-4">{log.nama_alat}</td>
-                            <td className="p-4 font-bold text-center text-emerald-400">{log.qty}</td>
+                            <td className="p-4 text-center font-bold">{log.jumlah_pinjam || log.qty || 1}</td>
                             <td className="p-4 text-xs text-slate-400">{formatTgl(log.tgl_pinjam)}</td>
+                            <td className="p-4 text-xs text-slate-400">{formatTgl(log.tgl_kembali)}</td>
                             <td className="p-4 text-center">
-                              <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold tracking-wide border ${
-                                log.status === "Dipinjam" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                log.status === "Dipinjam" ? "bg-amber-500/5 text-amber-400 border-amber-500/20" : "bg-emerald-500/5 text-emerald-400 border-emerald-500/20"
                               }`}>
                                 {log.status}
                               </span>
                             </td>
                             <td className="p-4 text-right">
                               {log.status === "Dipinjam" ? (
-                                <button onClick={() => handleKembalikanBarang(log.id_pinjam, log.id_barang)} className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-xs font-bold rounded-lg hover:brightness-110 active:scale-95 transition-all shadow-md">
-                                  Terima Barang
+                                <button onClick={() => handleKembalikanBarang(log.id_pinjam, log.id_barang)} className="px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-xs font-bold rounded-lg transition-all active:scale-95">
+                                  Terima Kembali
                                 </button>
-                              ) : <span className="inline-block text-[10px] text-slate-500 font-bold bg-slate-950 border border-slate-800 px-2.5 py-1 rounded">Selesai</span>}
+                              ) : (
+                                <span className="inline-block text-[10px] text-slate-500 font-bold bg-slate-900/80 border border-slate-800 px-2.5 py-1 rounded-md">Selesai</span>
+                              )}
                             </td>
                           </tr>
                         ))}
-                        {logPeminjaman.length === 0 && (
-                          <tr>
-                            <td colSpan="6" className="p-8 text-center text-slate-500 text-sm">Belum ada catatan sirkulasi peminjaman.</td>
-                          </tr>
-                        )}
                       </tbody>
                     </table>
                   </div>
@@ -472,78 +703,59 @@ function App() {
   }
 
   // ========================================================
-  // RENDER: VIEW USER (SISWA)
+  // RENDER: MODE USER (SISWA)
   // ========================================================
   return (
-    <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative">
-      <div className="absolute top-0 right-[-10%] w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none"></div>
-
+    <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative overflow-x-hidden">
       <div className="mx-auto max-w-6xl relative z-10">
-        <header className="mb-8 border-b border-slate-800/80 pb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-5">
+        <header className="mb-6 border-b border-slate-850 pb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full text-xs font-semibold mb-3">
+            <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-semibold text-emerald-400 mb-3">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span> Terminal Praktikan
             </div>
-            <h1 className="text-3xl font-black text-white sm:text-4xl tracking-tight">Katalog <span className="text-emerald-500">Alat Lab</span></h1>
-            <p className="mt-2 text-sm text-slate-400 max-w-lg leading-relaxed">Cari dan pinjam perangkat jaringan yang diperlukan untuk modul praktikum lo hari ini.</p>
+            <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent sm:text-4xl">
+              Sirkulasi Alat Lab TJKT
+            </h1>
+            <p className="mt-1 text-xs text-slate-400">Pilih dan pinjam modul praktikum yang lo butuhin.</p>
           </div>
-          
-          {/* SEARCH BAR */}
-          <div className="w-full md:w-80">
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500">🔍</span>
-              <input 
-                type="text" 
-                placeholder="Cari alat (ex: Mikrotik, Kabel)..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all text-white placeholder-slate-600 shadow-inner"
-              />
-            </div>
+
+          {/* INPUT FILTER CARI BARANG */}
+          <div className="w-full md:w-80 relative">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-500 text-sm">🔍</span>
+            <input 
+              type="text"
+              placeholder="Cari perangkat lab..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-600"
+            />
           </div>
         </header>
 
-        {/* KATEGORI FILTER */}
-        <div className="flex flex-wrap gap-2 mb-8 bg-slate-900/40 p-2 border border-slate-800/80 rounded-xl w-max backdrop-blur-sm">
+        <div className="flex flex-wrap items-center gap-2 mb-8 bg-slate-950/40 p-2 border border-slate-900 rounded-xl max-w-fit">
           {listKategoriUnik.map((kat) => (
-            <button
-              key={kat}
-              onClick={() => setSelectedKategori(kat)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all uppercase tracking-wider ${
-                selectedKategori === kat ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/30' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
-            >
+            <button key={kat} onClick={() => setSelectedKategori(kat)} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all ${selectedKategori === kat ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}>
               {kat}
             </button>
           ))}
         </div>
 
-        {/* RENDER KARTU BARANG */}
-        {isLoading && daftarBarang.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-slate-800 border-t-emerald-500"></div>
-            <p className="text-xs text-slate-400 font-bold tracking-widest uppercase animate-pulse">Menghubungkan ke Database...</p>
-          </div>
+        {isLoading ? (
+          <p className="text-center py-10 text-xs text-slate-400">Sinkronisasi Database...</p>
         ) : barangTerfilter.length === 0 ? (
-          <div className="text-center py-20 border border-dashed border-slate-800/80 rounded-2xl bg-slate-900/20">
-            <div className="text-3xl mb-3 opacity-50">📡</div>
-            <p className="text-sm text-slate-400">Tidak ada perangkat yang sesuai dengan pencarian lo, Bro.</p>
+          <div className="text-center py-20 border border-dashed border-slate-800 rounded-2xl bg-slate-900/10">
+            <p className="text-sm text-slate-500">Tidak ada alat yang ditemukan.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {barangTerfilter.map((barang) => (
-              <CardBarang key={barang.id_barang} barang={barang} onPinjam={(b) => { setSelectedBarang(b); setIsModalOpen(true); }} />
+              <CardBarang key={barang.id || barang.id_barang} barang={barang} onPinjam={handlePinjamKlik} />
             ))}
           </div>
         )}
       </div>
 
-      {/* MODAL PEMINJAMAN */}
-      <ModalPinjam 
-        barang={selectedBarang} isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)} onSubmit={handleProsesPeminjaman}
-        isLoading={isLoading}
-      />
+      <ModalPinjam barang={selectedBarang} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSubmit={handleProsesPeminjaman} isLoading={isLoading} />
     </div>
   );
 }
