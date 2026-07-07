@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 // ========================================================
 // 🛠️ CONFIG & KREDENSIAL UTAMA
 // ========================================================
+// URL DEPLOYMENT BARU SESUAI PERMINTAAN LO, BRO!
 const API_URL = 'https://script.google.com/macros/s/AKfycbx2sfMYJznjLthK3h9Bq24bBKe8cGrjErBCOYZrJBzIxMtrzhXpK_AIe7IfRI-Dzz0n3w/exec';
 const PIN_ADMIN = 'sXyKl$Pewk?'; 
 
@@ -63,24 +64,52 @@ const CardBarang = ({ barang, onPinjam }) => {
   );
 };
 
-const FormAdmin = ({ onTambahBarang, isLoading }) => {
+// --- 🔥 UPGRADE FORM ADMIN: DUAL-MODE (ADD / EDIT) ---
+const FormAdmin = ({ onTambahBarang, onEditBarang, editingBarang, setEditingBarang, isLoading }) => {
   const [nama, setNama] = useState('');
   const [kategori, setKategori] = useState('');
   const [stok, setStok] = useState(1);
-  const [gambar, setGambar] = useState(''); // Menyimpan data Base64 gambar
+  const [gambar, setGambar] = useState(''); 
   const [preview, setPreview] = useState('');
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [fileInputKey, setFileInputKey] = useState(Date.now());
 
-  // Handler Konversi & Kompresi Gambar ke Base64 (Maks 250x250px agar muat di sel Sheets)
+  // Efek samping untuk mendeteksi jika Admin memilih tombol Edit di card
+  useEffect(() => {
+    if (editingBarang) {
+      setNama(editingBarang.nama_alat || editingBarang.nama || '');
+      setKategori(editingBarang.kategori || '');
+      setStok(editingBarang.stok_total !== undefined ? editingBarang.stok_total : (editingBarang.stok || 1));
+      setGambar(editingBarang.gambar || '');
+      setPreview(editingBarang.gambar || '');
+    } else {
+      resetForm();
+    }
+  }, [editingBarang]);
+
+  const resetForm = () => {
+    setNama('');
+    setKategori('');
+    setStok(1);
+    setGambar('');
+    setPreview('');
+    // 🔥 [FIX]: Di sini sebelumnya crash karena setEditingBarang undefined pas gak dipassing dari App
+    if (setEditingBarang) setEditingBarang(null); 
+    setFileInputKey(Date.now());
+  };
+
+  // Handler Konversi & Kompresi Gambar ke Base64 (Maks 180x180px JPEG 0.5)
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setIsCompressing(true);
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 250;
-          const MAX_HEIGHT = 250;
+          const MAX_WIDTH = 180; 
+          const MAX_HEIGHT = 180;
           let width = img.width;
           let height = img.height;
 
@@ -100,12 +129,20 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Kompresi kualitas gambar ke JPEG 0.7
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
           setGambar(dataUrl);
           setPreview(dataUrl);
+          setIsCompressing(false);
+        };
+        img.onerror = () => {
+          alert("Gagal memproses gambar!");
+          setIsCompressing(false);
         };
         img.src = event.target.result;
+      };
+      reader.onerror = () => {
+        alert("Gagal membaca file gambar!");
+        setIsCompressing(false);
       };
       reader.readAsDataURL(file);
     }
@@ -113,19 +150,32 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onTambahBarang({ nama_alat: nama, kategori, stok, gambar });
-    setNama('');
-    setKategori('');
-    setStok(1);
-    setGambar('');
-    setPreview('');
+    if (isCompressing) {
+      alert("Tunggu sebentar, gambar sedang dikompres!");
+      return;
+    }
+
+    const payload = { nama_alat: nama, kategori, stok, gambar };
+
+    if (editingBarang) {
+      // Jalankan aksi Edit
+      if (onEditBarang) onEditBarang({ id_barang: editingBarang.id_barang || editingBarang.id, ...payload });
+    } else {
+      // Jalankan aksi Tambah Baru
+      if (onTambahBarang) onTambahBarang(payload);
+    }
+    resetForm();
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 bg-slate-900/40 rounded-xl border border-slate-800/50 backdrop-blur-sm">
+    <form onSubmit={handleSubmit} className="p-6 bg-slate-900/40 rounded-xl border border-slate-800/50 backdrop-blur-sm scroll-mt-6" id="form-admin-area">
       <div className="flex items-center gap-3 mb-5">
-        <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-sm">➕</div>
-        <h3 className="text-md font-bold text-white">Input Perangkat Baru</h3>
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm ${editingBarang ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-emerald-500/10 border border-emerald-500/20'}`}>
+          {editingBarang ? '✏️' : '➕'}
+        </div>
+        <h3 className="text-md font-bold text-white">
+          {editingBarang ? `Edit Perangkat: ${editingBarang.nama_alat || editingBarang.nama}` : 'Input Perangkat Baru'}
+        </h3>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -142,21 +192,28 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Stok Awal</label>
+            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">
+              {editingBarang ? 'Ubah Kapasitas/Stok Total' : 'Stok Awal'}
+            </label>
             <input required type="number" min="1" placeholder="Qty" value={stok} onChange={e=>setStok(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 outline-none transition-all" />
           </div>
           <div>
-            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Upload Gambar Alat</label>
-            <input type="file" accept="image/*" onChange={handleFileChange} className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 file:cursor-pointer cursor-pointer focus:outline-none" />
+            <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1.5 ml-1">Upload Gambar Baru (Opsional)</label>
+            <input key={fileInputKey} type="file" accept="image/*" onChange={handleFileChange} className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 file:cursor-pointer cursor-pointer focus:outline-none" />
           </div>
         </div>
 
         {/* Box Preview Gambar */}
-        <div className="flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-xl p-2 bg-slate-950/40">
-          {preview ? (
-            <div className="relative w-full h-full max-h-[110px] rounded-lg overflow-hidden">
+        <div className="flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-xl p-2 bg-slate-950/40 min-h-[110px]">
+          {isCompressing ? (
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-800 border-t-amber-500"></div>
+              <span className="text-[9px] text-amber-500 uppercase font-bold animate-pulse">Mengompres...</span>
+            </div>
+          ) : preview ? (
+            <div className="relative w-full h-full max-h-[110px] rounded-lg overflow-hidden flex items-center justify-center">
               <img src={preview} alt="Preview" className="w-full h-full object-contain" />
-              <button type="button" onClick={() => { setGambar(''); setPreview(''); }} className="absolute top-1 right-1 bg-red-600 hover:bg-red-500 text-white rounded-full p-1 text-[8px] font-bold">✕</button>
+              <button type="button" onClick={() => { setGambar(''); setPreview(''); setFileInputKey(Date.now()); }} className="absolute top-1 right-1 bg-red-600 hover:bg-red-500 text-white rounded-full p-1 text-[8px] font-bold">✕</button>
             </div>
           ) : (
             <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">Preview Gambar</span>
@@ -164,9 +221,14 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
         </div>
       </div>
 
-      <div className="mt-5 flex justify-end">
-        <button disabled={isLoading} type="submit" className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-bold rounded-lg transition-all disabled:opacity-50 shadow-lg shadow-amber-900/20 active:scale-95">
-          {isLoading ? 'Menyimpan...' : 'Simpan ke Database'}
+      <div className="mt-5 flex justify-end gap-3">
+        {editingBarang && (
+          <button type="button" onClick={resetForm} className="px-5 py-2.5 bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-300 text-sm font-bold rounded-lg transition-all active:scale-95">
+            Batal Edit
+          </button>
+        )}
+        <button disabled={isLoading || isCompressing} type="submit" className={`px-6 py-2.5 text-white text-sm font-bold rounded-lg transition-all disabled:opacity-50 shadow-lg active:scale-95 ${editingBarang ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:brightness-110 shadow-amber-900/20' : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 shadow-emerald-900/20'}`}>
+          {isLoading ? 'Menyimpan...' : isCompressing ? 'Proses Gambar...' : editingBarang ? 'Update Data' : 'Simpan ke Database'}
         </button>
       </div>
     </form>
@@ -174,7 +236,7 @@ const FormAdmin = ({ onTambahBarang, isLoading }) => {
 };
 
 // ========================================================
-// 🛠️ MEMBUAT MODAL PINJAM PERSIS SEPERTI GAMBAR MOCKUP
+// 🛠 MODAL PINJAM
 // ========================================================
 const ModalPinjam = ({ barang, isOpen, onClose, onSubmit, isLoading }) => {
   const [nama, setNama] = useState('');
@@ -183,7 +245,7 @@ const ModalPinjam = ({ barang, isOpen, onClose, onSubmit, isLoading }) => {
   if (!isOpen || !barang) return null;
   
   const namaTarget = barang.nama || barang.nama_barang || barang.nama_alat;
-  const stokTersedia = barang.stok_terfilter !== undefined ? barang.stok_terfilter : (barang.stok_tersedia || barang.stok || 1);
+  const stokTersedia = barang.stok_tersedia !== undefined ? barang.stok_tersedia : (barang.stok || 1);
   const gambarSrc = barang.gambar || '';
 
   // Hitung tanggal pinjam (hari ini) dan batas pengembalian (hari ini + 3 hari)
@@ -279,7 +341,7 @@ const ModalPinjam = ({ barang, isOpen, onClose, onSubmit, isLoading }) => {
             />
           </div>
 
-          {/* Bagian Tanggal & Batas Pinjam (Sesuai Mockup) */}
+          {/* Bagian Tanggal & Batas Pinjam */}
           <div className="bg-[#0c0f1a] border border-slate-850 rounded-2xl p-4 space-y-4 text-xs font-semibold">
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Tanggal Pinjam (Hari Ini):</span>
@@ -328,10 +390,11 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBarang, setSelectedBarang] = useState(null);
+  const [editingBarang, setEditingBarang] = useState(null); // State melacak barang yg sedang diedit
   
   const [selectedKategori, setSelectedKategori] = useState('Semua');
   const [currentPage, setCurrentPage] = useState('user');
-  const [searchQuery, setSearchQuery] = useState(''); // State Search Bar
+  const [searchQuery, setSearchQuery] = useState(''); 
   
   const [inputPin, setInputPin] = useState('');
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
@@ -416,16 +479,47 @@ function App() {
   const handleTambahBarangKeSheets = async (dataBarangBaru) => {
     setIsLoading(true);
     try {
-      await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: "addBarang", ...dataBarangBaru })
       });
-      alert("Barang berhasil ditambahkan ke database!");
-      fetchAllData();
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        alert(result.message || "Barang berhasil ditambahkan!");
+        fetchAllData();
+      } else {
+        alert("Gagal menambahkan barang: " + result.message);
+        setIsLoading(false);
+      }
     } catch (error) {
       console.error(error);
-      alert("Gagal menambahkan barang.");
+      alert("Gagal koneksi ke server GAS untuk menambahkan barang.");
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditBarangKeSheets = async (dataEditBarang) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: "editBarang", ...dataEditBarang })
+      });
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        alert("Data alat berhasil diperbarui!");
+        fetchAllData();
+      } else {
+        alert("Gagal memperbarui data: " + result.message);
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Gagal koneksi ke server GAS saat memperbarui data.");
       setIsLoading(false);
     }
   };
@@ -443,13 +537,20 @@ function App() {
     setIsLoading(true);
 
     try {
-      await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: "hapusBarang", id_barang: idTarget })
       });
-      alert("Alat sukses dihapus!");
-      fetchAllData(); 
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        alert("Alat sukses dihapus!");
+        fetchAllData(); 
+      } else {
+        alert("Gagal menghapus: " + result.message);
+        setIsLoading(false);
+      }
     } catch (error) {
       console.error(error);
       alert("Gagal koneksi ke server untuk menghapus barang.");
@@ -463,7 +564,7 @@ function App() {
     const hariIni = new Date().toISOString().split('T')[0];
 
     try {
-      await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -473,8 +574,15 @@ function App() {
           tgl_kembali_real: hariIni 
         })
       });
-      alert("Proses pengembalian barang sukses!");
-      fetchAllData(); 
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        alert("Proses pengembalian barang sukses!");
+        fetchAllData(); 
+      } else {
+        alert("Gagal memproses pengembalian: " + result.message);
+        setIsLoading(false);
+      }
     } catch (error) {
       console.error(error);
       alert("Gagal memproses pengembalian.");
@@ -487,17 +595,32 @@ function App() {
     setIsModalOpen(true);
   };
 
+  const handleEditKlik = (barang) => {
+    setEditingBarang(barang);
+    const formElement = document.getElementById('form-admin-area');
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const handleProsesPeminjaman = async (dataPayload) => {
     setIsModalOpen(false);
     setIsLoading(true);
     try {
-      await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: "pinjamAlat", ...dataPayload })
       });
-      alert("Izin peminjaman alat berhasil diproses!");
-      fetchAllData();
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        alert("Izin peminjaman alat berhasil diproses!");
+        fetchAllData();
+      } else {
+        alert("Gagal memproses peminjaman: " + result.message);
+        setIsLoading(false);
+      }
     } catch (error) {
       console.error(error);
       alert("Gagal memproses transaksi peminjaman.");
@@ -522,10 +645,10 @@ function App() {
     return new Date(dateStr).toLocaleDateString('id-ID', opsi);
   };
 
-  const listKategoriUnik = ['Semua', ...new Set(daftarBarang.map(b => b.kategori || 'Umum'))];
+  // 🔥 [FIX] Menambahkan `(daftarBarang || [])` sebagai pengaman extra supaya map & filter ga crash
+  const listKategoriUnik = ['Semua', ...new Set((daftarBarang || []).map(b => b.kategori || 'Umum'))];
 
-  // Logic filter gabungan Kategori & Search Bar
-  const barangTerfilter = daftarBarang.filter(b => {
+  const barangTerfilter = (daftarBarang || []).filter(b => {
     const matchKategori = selectedKategori === 'Semua' || (b.kategori || 'Umum') === selectedKategori;
     const namaAlat = b.nama || b.nama_barang || b.nama_alat || '';
     const matchSearch = namaAlat.toLowerCase().includes(searchQuery.toLowerCase());
@@ -582,7 +705,17 @@ function App() {
             </div>
           ) : (
             <div className="space-y-8">
-              <FormAdmin onTambahBarang={handleTambahBarangKeSheets} isLoading={isLoading} />
+              
+              {/* 🔥 [FIX BUG 1 & BUG 3]: Di sini akar masalahnya!
+                  Props onEditBarang, editingBarang, dan setEditingBarang sebelumnya kelupaan lo taro. 
+                  Jadi pas nyentuh useEffect dari komponen FormAdmin, React auto crash! */}
+              <FormAdmin 
+                onTambahBarang={handleTambahBarangKeSheets} 
+                onEditBarang={handleEditBarangKeSheets} 
+                editingBarang={editingBarang}           
+                setEditingBarang={setEditingBarang}     
+                isLoading={isLoading} 
+              />
 
               {/* MANAJEMEN RAK */}
               <div className="rounded-2xl border border-slate-800/70 bg-slate-900/20 p-6 shadow-2xl">
@@ -597,7 +730,7 @@ function App() {
                   <div className="text-center py-6 text-xs text-slate-400">Memuat data rak...</div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {daftarBarang.map((barang) => {
+                    {(daftarBarang || []).map((barang) => {
                       const idItem = barang.id || barang.id_barang;
                       const namaItem = barang.nama || barang.nama_barang || barang.nama_alat;
                       
@@ -622,9 +755,16 @@ function App() {
                               </div>
                             </div>
                           </div>
-                          <button onClick={() => handleHapusBarang(barang)} className="px-3 py-1.5 bg-red-500/10 hover:bg-red-600 border border-red-500/20 text-red-400 hover:text-white text-xs font-bold rounded-lg transition-all active:scale-95 flex-shrink-0">
-                            Hapus
-                          </button>
+                          
+                          {/* --- PANEL TOMBOL AKSI ADMIN (HAPUS & EDIT) --- */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => handleEditKlik(barang)} className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-600 border border-amber-500/20 hover:border-amber-600 text-amber-400 hover:text-white text-xs font-bold rounded-lg transition-all active:scale-95">
+                              Edit
+                            </button>
+                            <button onClick={() => handleHapusBarang(barang)} className="px-2.5 py-1.5 bg-red-500/10 hover:bg-red-600 border border-red-500/20 hover:border-red-600 text-red-400 hover:text-white text-xs font-bold rounded-lg transition-all active:scale-95">
+                              Hapus
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -665,7 +805,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/40">
-                        {logPeminjaman.map((log) => (
+                        {(logPeminjaman || []).map((log) => (
                           <tr key={log.id_pinjam} className="hover:bg-slate-900/30 text-slate-300">
                             <td className="p-4 font-semibold text-slate-200">{log.nama_peminjam}</td>
                             <td className="p-4">{log.nama_alat}</td>
@@ -707,6 +847,8 @@ function App() {
   // ========================================================
   return (
     <div className="min-h-screen bg-[#070a13] p-4 md:p-8 text-slate-100 antialiased font-sans relative overflow-x-hidden">
+      <div className="absolute top-0 right-[-10%] w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[120px] pointer-events-none"></div>
+
       <div className="mx-auto max-w-6xl relative z-10">
         <header className="mb-6 border-b border-slate-850 pb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
           <div>
@@ -744,7 +886,7 @@ function App() {
           <p className="text-center py-10 text-xs text-slate-400">Sinkronisasi Database...</p>
         ) : barangTerfilter.length === 0 ? (
           <div className="text-center py-20 border border-dashed border-slate-800 rounded-2xl bg-slate-900/10">
-            <p className="text-sm text-slate-500">Tidak ada alat yang ditemukan.</p>
+            <p className="text-sm text-slate-400">Tidak ada alat yang ditemukan.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
